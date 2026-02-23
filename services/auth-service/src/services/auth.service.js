@@ -133,15 +133,6 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.INVALID_OTP, ERROR_CODES.INVALID_OTP, HTTP_STATUS.BAD_REQUEST);
     }
 
-    await executeWithTimeoutAndRetry(
-      () => this.cognitoService.adminConfirmSignUp({
-        emailAddress,
-        hostName
-      }),
-      TIMEOUT_CONFIG.COGNITO_TIMEOUT_MS,
-      TIMEOUT_CONFIG.COGNITO_RETRY_COUNT
-    );
-
     const updatedUser = await this.userRepository.markRegistrationVerified(user._id);
 
     await executeWithTimeoutAndRetry(
@@ -231,7 +222,7 @@ class AuthService {
 
     let user = await this.userRepository.findByEmailAndHostName(
       { emailAddress, hostName },
-      { projection: { _id: 1, userId: 1, emailAddress: 1, cognitoUserId: 1, status: 1, role: 1, hostName: 1 } }
+      { projection: { _id: 1, userId: 1, emailAddress: 1, cognitoUserId: 1, status: 1, role: 1, hostName: 1, emailConfirmed: 1, verificationPending: 1 } }
     );
 
     if (!user) {
@@ -262,6 +253,34 @@ class AuthService {
 
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
+    }
+
+    if (!user.emailConfirmed) {
+      console.log('🔐 [LOGIN] Email not confirmed, generating verification OTP');
+      const otp = this.otpCache.generateOtp();
+      console.log('✅ [LOGIN] Verification OTP generated:', otp);
+
+      await executeWithTimeoutAndRetry(
+        () => this.otpCache.setLoginOtp({
+          emailAddress,
+          hostName,
+          otp,
+          expiresInSec: 300
+        }),
+        TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
+        TIMEOUT_CONFIG.REDIS_RETRY_COUNT
+      );
+
+      this.kafkaPublisher.publishLoginOtpRequested({
+        emailAddress,
+        otp,
+        hostName
+      }).catch(err => logger.error('Failed to publish verification OTP event', { emailAddress, error: err.message }));
+
+      return {
+        requiresVerification: true,
+        message: 'OTP_VERIFICATION_REQUIRED'
+      };
     }
 
     console.log('🔐 [LOGIN] Generating OTP');

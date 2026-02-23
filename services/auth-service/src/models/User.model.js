@@ -28,6 +28,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  otpVerified: {
+    type: Boolean,
+    default: false
+  },
+  verificationPending: {
+    type: Boolean,
+    default: true
+  },
   status: {
     type: String,
     enum: ['pending', 'active', 'suspended'],

@@ -49,6 +49,8 @@ class UserRepository {
       companyName: companyName || null,
       hostName,
       emailConfirmed: false,
+      otpVerified: false,
+      verificationPending: true,
       status: 'pending',
       role: 'user',
       isVerified: false,
@@ -83,6 +85,8 @@ class UserRepository {
       {
         $set: {
           emailConfirmed: true,
+          otpVerified: true,
+          verificationPending: false,
           isVerified: true,
           status: 'active',
           updatedAt: new Date()
@@ -101,6 +105,26 @@ class UserRepository {
     return db.collection(this.collectionName).updateOne(
       { _id: new ObjectId(id) },
       { $set: { cognitoUserId, updatedAt: new Date() } },
+      { session }
+    );
+  }
+
+  async markEmailVerified(id, { session } = {}) {
+    const db = getDb();
+    await db.collection(this.collectionName).updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          emailConfirmed: true,
+          otpVerified: true,
+          verificationPending: false,
+          updatedAt: new Date()
+        }
+      },
+      { session }
+    );
+    return db.collection(this.collectionName).findOne(
+      { _id: new ObjectId(id) },
       { session }
     );
   }

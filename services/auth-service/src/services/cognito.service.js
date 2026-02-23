@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { getCognitoClient, validateCognitoCredentials } = require('../config/cognito');
 const {
   AdminCreateUserCommand,
+  AdminSetUserPasswordCommand,
   AdminConfirmSignUpCommand,
   AdminGetUserCommand,
   AdminInitiateAuthCommand
@@ -23,9 +24,12 @@ class CognitoService {
     await this.validateRuntime(cognitoUserPoolId);
     const client = getCognitoClient();
 
-    const command = new AdminCreateUserCommand({
+    const tempPassword = `Temp${Math.random().toString(36).slice(-8)}!1`;
+
+    const createCommand = new AdminCreateUserCommand({
       UserPoolId: cognitoUserPoolId,
       Username: emailAddress,
+      TemporaryPassword: tempPassword,
       UserAttributes: [
         { Name: 'email', Value: emailAddress },
         { Name: 'email_verified', Value: 'false' },
@@ -34,9 +38,24 @@ class CognitoService {
       MessageAction: 'SUPPRESS'
     });
 
-    const result = await client.send(command);
+    const result = await client.send(createCommand);
     const sub = result.User?.Attributes?.find(a => a.Name === 'sub')?.Value;
-    logger.info('Cognito user created', { emailAddress, sub });
+
+    const setPasswordCommand = new AdminSetUserPasswordCommand({
+      UserPoolId: cognitoUserPoolId,
+      Username: emailAddress,
+      Password: tempPassword,
+      Permanent: true
+    });
+    await client.send(setPasswordCommand);
+
+    const confirmCommand = new AdminConfirmSignUpCommand({
+      UserPoolId: cognitoUserPoolId,
+      Username: emailAddress
+    });
+    await client.send(confirmCommand);
+
+    logger.info('Cognito user created and confirmed', { emailAddress, sub });
     return { sub };
   }
 
