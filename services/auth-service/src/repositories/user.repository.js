@@ -1,102 +1,108 @@
+'use strict';
+
 const { getDb } = require('../config/database');
 const { ObjectId } = require('mongodb');
+const crypto = require('crypto');
 
 class UserRepository {
   constructor() {
     this.collectionName = 'users';
   }
 
-  async existsByEmailAndHostName(params) {
-    const { email, hostName } = params;
-    const db = getDb();
-    const count = await db.collection(this.collectionName).countDocuments({
-      email,
-      hostName
-    });
-    return count > 0;
+  generateUserId() {
+    return crypto.randomBytes(16).toString('hex');
   }
 
-  async findByEmailAndHostName(params) {
-    const { email, hostName } = params;
+  async findByEmailAndHostName({ emailAddress, hostName }, { projection } = {}) {
     const db = getDb();
-    const userData = await db.collection(this.collectionName).findOne({
-      email,
-      hostName
-    });
-    if (!userData) return null;
-    return userData;
+    const opts = {};
+    if (projection) opts.projection = projection;
+    return db.collection(this.collectionName).findOne({ emailAddress, hostName }, opts);
   }
 
-  async findByEmailAndTenant(params) {
-    const { email, tenantId } = params;
+  async findByUserId(userId, { projection, session } = {}) {
     const db = getDb();
-    const userData = await db.collection(this.collectionName).findOne({
-      email,
-      tenantId
-    });
-    if (!userData) return null;
-    return userData;
+    const opts = {};
+    if (projection) opts.projection = projection;
+    if (session) opts.session = session;
+    return db.collection(this.collectionName).findOne({ userId }, opts);
   }
 
-  async findById(params) {
-    const { userId } = params;
+  async findById(id, { projection, session } = {}) {
     const db = getDb();
-    const userData = await db.collection(this.collectionName).findOne({
-      _id: new ObjectId(userId)
-    });
-    if (!userData) return null;
-    return userData;
+    const opts = {};
+    if (projection) opts.projection = projection;
+    if (session) opts.session = session;
+    return db.collection(this.collectionName).findOne(
+      { _id: new ObjectId(id) },
+      opts
+    );
   }
 
-  async createRegistrationCandidate(params) {
-    const { email, userName, companyName, hostName, tenantId } = params;
+  async createRegistrationCandidate({ emailAddress, userName, companyName, hostName }, { session } = {}) {
     const db = getDb();
+    const userId = this.generateUserId();
     const userData = {
-      email,
+      userId,
+      emailAddress,
       userName,
       companyName: companyName || null,
       hostName,
-      tenantId,
       emailConfirmed: false,
       status: 'pending',
       role: 'user',
+      isVerified: false,
       createdAt: new Date()
     };
-    const result = await db.collection(this.collectionName).insertOne(userData);
+    const result = await db.collection(this.collectionName).insertOne(userData, { session });
     return { ...userData, _id: result.insertedId };
   }
 
-  async create(params) {
-    const { email, cognitoUserId, tenantId } = params;
+  async create({ emailAddress, cognitoUserId, hostName }, { session } = {}) {
     const db = getDb();
+    const userId = this.generateUserId();
     const userData = {
-      email,
+      userId,
+      emailAddress,
       cognitoUserId,
-      tenantId,
+      hostName,
       role: 'user',
       status: 'active',
       emailConfirmed: true,
+      isVerified: true,
       createdAt: new Date()
     };
-    const result = await db.collection(this.collectionName).insertOne(userData);
+    const result = await db.collection(this.collectionName).insertOne(userData, { session });
     return { ...userData, _id: result.insertedId };
   }
 
-  async markRegistrationVerified(params) {
-    const { userId } = params;
+  async markRegistrationVerified(id, { session } = {}) {
     const db = getDb();
     await db.collection(this.collectionName).updateOne(
-      { _id: userId },
+      { _id: new ObjectId(id) },
       {
         $set: {
           emailConfirmed: true,
+          isVerified: true,
           status: 'active',
           updatedAt: new Date()
         }
-      }
+      },
+      { session }
     );
-    const userData = await db.collection(this.collectionName).findOne({ _id: userId });
-    return userData;
+    return db.collection(this.collectionName).findOne(
+      { _id: new ObjectId(id) },
+      { session }
+    );
+  }
+
+  async updateCognitoSubId(id, cognitoUserId, { session } = {}) {
+    const db = getDb();
+    return db.collection(this.collectionName).updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { cognitoUserId, updatedAt: new Date() } },
+      { session }
+    );
   }
 }
 

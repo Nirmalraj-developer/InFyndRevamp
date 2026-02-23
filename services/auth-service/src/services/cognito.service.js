@@ -1,103 +1,94 @@
-const { AdminGetUserCommand, AdminInitiateAuthCommand, AdminCreateUserCommand, AdminConfirmSignUpCommand } = require('@aws-sdk/client-cognito-identity-provider');
+'use strict';
+
+const logger = require('../utils/logger');
 const { getCognitoClient, validateCognitoCredentials } = require('../config/cognito');
-const config = require('../config');
+const {
+  AdminCreateUserCommand,
+  AdminConfirmSignUpCommand,
+  AdminGetUserCommand,
+  AdminInitiateAuthCommand
+} = require('@aws-sdk/client-cognito-identity-provider');
 
 class CognitoService {
   async validateRuntime(cognitoUserPoolId) {
-    if (!cognitoUserPoolId || !cognitoUserPoolId.includes('_')) {
-      throw new Error('Invalid Cognito UserPoolId');
+    if (!cognitoUserPoolId) {
+      throw new Error('Cognito User Pool ID is required');
     }
-
-    const userPoolRegion = cognitoUserPoolId.split('_')[0];
-    if (userPoolRegion !== config.aws.cognitoRegion) {
-      throw new Error(
-        `Cognito region mismatch: AWS_REGION=${config.aws.cognitoRegion}, UserPoolId region=${userPoolRegion}`
-      );
-    }
-
     await validateCognitoCredentials();
   }
 
-  async adminGetUser(params) {
-    const { email, cognitoUserPoolId } = params;
-    
-    await this.validateRuntime(cognitoUserPoolId);
-    const client = getCognitoClient();
-    
-    try {
-      const command = new AdminGetUserCommand({
-        UserPoolId: cognitoUserPoolId,
-        Username: email
-      });
-      
-      const result = await client.send(command);
-      
-      const sub = result.UserAttributes.find(attr => attr.Name === 'sub')?.Value;
-      const emailVerified = result.UserAttributes.find(attr => attr.Name === 'email_verified')?.Value === 'true';
-      
-      return {
-        sub,
-        email,
-        emailVerified,
-        status: result.UserStatus,
-        enabled: result.Enabled
-      };
-    } catch (error) {
-      if (error.name === 'UserNotFoundException') {
-        return null;
-      }
-      throw error;
-    }
-  }
-
   async adminCreateUser(params) {
-    const { email, userName, cognitoUserPoolId } = params;
-    
+    const { emailAddress, userName, hostName } = params;
+    const cognitoUserPoolId = this.getCognitoPoolIdByHostName(hostName);
     await this.validateRuntime(cognitoUserPoolId);
     const client = getCognitoClient();
-    
+
     const command = new AdminCreateUserCommand({
       UserPoolId: cognitoUserPoolId,
-      Username: email,
+      Username: emailAddress,
       UserAttributes: [
-        { Name: 'email', Value: email },
+        { Name: 'email', Value: emailAddress },
         { Name: 'email_verified', Value: 'false' },
-        { Name: 'name', Value: userName || email }
+        { Name: 'name', Value: userName }
       ],
       MessageAction: 'SUPPRESS'
     });
-    
+
     const result = await client.send(command);
-    const sub = result.User.Attributes.find(attr => attr.Name === 'sub')?.Value;
-    
+    const sub = result.User?.Attributes?.find(a => a.Name === 'sub')?.Value;
+    logger.info('Cognito user created', { emailAddress, sub });
     return { sub };
   }
 
   async adminConfirmSignUp(params) {
-    const { email, cognitoUserPoolId } = params;
-    
+    const { emailAddress, hostName } = params;
+    const cognitoUserPoolId = this.getCognitoPoolIdByHostName(hostName);
     await this.validateRuntime(cognitoUserPoolId);
     const client = getCognitoClient();
-    
+
     const command = new AdminConfirmSignUpCommand({
       UserPoolId: cognitoUserPoolId,
-      Username: email
+      Username: emailAddress
     });
-    
     await client.send(command);
-    return { success: true };
+    logger.info('Cognito user confirmed', { emailAddress });
   }
 
-  async getUserByEmail(params) {
-    return await this.adminGetUser(params);
+  async adminGetUser(params) {
+    const { emailAddress, hostName } = params;
+    const cognitoUserPoolId = this.getCognitoPoolIdByHostName(hostName);
+    await this.validateRuntime(cognitoUserPoolId);
+    const client = getCognitoClient();
+
+    const command = new AdminGetUserCommand({
+      UserPoolId: cognitoUserPoolId,
+      Username: emailAddress
+    });
+
+    const result = await client.send(command);
+    const sub = result.UserAttributes?.find(a => a.Name === 'sub')?.Value;
+    return {
+      sub,
+      enabled: result.Enabled,
+      status: result.UserStatus
+    };
+  }
+
+  getCognitoPoolIdByHostName(hostName) {
+    // Map hostName to Cognito User Pool ID
+    // This should be configured via environment variables or config file
+    const poolMapping = {
+      'app.infynd.com': process.env.COGNITO_USER_POOL_ID,
+      'localhost': process.env.COGNITO_USER_POOL_ID
+    };
+    return poolMapping[hostName] || process.env.COGNITO_USER_POOL_ID;
   }
 
   async authenticateUser(params) {
     const { email, password, cognitoUserPoolId, cognitoClientId } = params;
-    
     await this.validateRuntime(cognitoUserPoolId);
     const client = getCognitoClient();
-    
+
     const command = new AdminInitiateAuthCommand({
       UserPoolId: cognitoUserPoolId,
       ClientId: cognitoClientId,
@@ -107,9 +98,13 @@ class CognitoService {
         PASSWORD: password
       }
     });
-    
+
     const result = await client.send(command);
-    return result.AuthenticationResult;
+    return {
+      accessToken: result.AuthenticationResult?.AccessToken,
+      idToken: result.AuthenticationResult?.IdToken,
+      refreshToken: result.AuthenticationResult?.RefreshToken
+    };
   }
 }
 

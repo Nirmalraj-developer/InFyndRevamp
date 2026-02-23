@@ -1,7 +1,10 @@
+'use strict';
+
 const express = require('express');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const bootstrap = require('./bootstrap');
+const logger = require('./utils/logger');
 const { container } = require('./container/di-container');
 const { disconnectKafka } = require('./config/kafka');
 const { disconnect: disconnectDb } = require('./config/database');
@@ -15,12 +18,12 @@ const { HELMET_CONFIG, SANITIZE_CONFIG } = require('./constants/security.constan
 
 const startServer = async () => {
   await bootstrap();
-  
+
   const app = express();
-  
+
   // Trust proxy for rate limiting behind load balancer
   app.set('trust proxy', 1);
-  
+
   // Security middleware (global)
   app.use(helmet({
     contentSecurityPolicy: HELMET_CONFIG.CONTENT_SECURITY_POLICY,
@@ -30,36 +33,36 @@ const startServer = async () => {
       preload: HELMET_CONFIG.HSTS_PRELOAD
     }
   }));
-  
+
   app.use(mongoSanitize({
     replaceWith: SANITIZE_CONFIG.REPLACE_WITH,
     allowDots: SANITIZE_CONFIG.ALLOW_DOTS
   }));
-  
+
   app.use(express.json());
   app.use(correlationMiddleware);
   app.use(enforceHttps);
-  
+
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', correlationId: req.correlationId });
   });
-  
+
   app.use('/auth', authRoutes);
-  
+
   app.use(errorMiddleware);
-  
+
   app.listen(config.service.port, () => {
-    console.log(`[AUTH] Service running on port ${config.service.port}`);
+    logger.info(`Service running on port ${config.service.port}`);
   });
 };
 
 async function shutdown() {
-  console.log('[AUTH] Shutting down...');
-  
+  logger.info('Shutting down');
+
   await disconnectKafka();
   await disconnectDb();
   await disconnectRedis();
-  
+
   process.exit(0);
 }
 
@@ -67,8 +70,6 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 startServer().catch((error) => {
-  console.error('[AUTH] Failed to start server:', error);
+  logger.error('Failed to start server', { error: error.message, stack: error.stack });
   process.exit(1);
 });
-
-

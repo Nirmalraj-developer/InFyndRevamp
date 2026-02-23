@@ -19,72 +19,104 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 const validateRegisterInitiate = [
-  body('email')
-    .isEmail().withMessage('Invalid email format')
-    .isLength({ min: VALIDATION_CONFIG.EMAIL_MIN_LENGTH, max: VALIDATION_CONFIG.EMAIL_MAX_LENGTH })
-    .withMessage(`Email must be between ${VALIDATION_CONFIG.EMAIL_MIN_LENGTH} and ${VALIDATION_CONFIG.EMAIL_MAX_LENGTH} characters`)
+  body("emailAddress")
+    .isEmail()
+    .withMessage("Invalid email format")
+    .isLength({
+      min: VALIDATION_CONFIG.EMAIL_MIN_LENGTH,
+      max: VALIDATION_CONFIG.EMAIL_MAX_LENGTH,
+    })
+    .withMessage(
+      `Email must be between ${VALIDATION_CONFIG.EMAIL_MIN_LENGTH} and ${VALIDATION_CONFIG.EMAIL_MAX_LENGTH} characters`,
+    )
     .normalizeEmail(),
-  body('userName')
+  body("userName")
     .trim()
-    .isLength({ min: VALIDATION_CONFIG.USERNAME_MIN_LENGTH, max: VALIDATION_CONFIG.USERNAME_MAX_LENGTH })
-    .withMessage(`Username must be between ${VALIDATION_CONFIG.USERNAME_MIN_LENGTH} and ${VALIDATION_CONFIG.USERNAME_MAX_LENGTH} characters`)
-    .matches(/^[a-zA-Z0-9\s]+$/).withMessage('Username can only contain letters, numbers and spaces'),
-  body('hostName')
+    .isLength({
+      min: VALIDATION_CONFIG.USERNAME_MIN_LENGTH,
+      max: VALIDATION_CONFIG.USERNAME_MAX_LENGTH,
+    })
+    .withMessage(
+      `Username must be between ${VALIDATION_CONFIG.USERNAME_MIN_LENGTH} and ${VALIDATION_CONFIG.USERNAME_MAX_LENGTH} characters`,
+    )
+    .matches(/^[a-zA-Z0-9\s]+$/)
+    .withMessage("Username can only contain letters, numbers and spaces"),
+  body("hostName")
     .trim()
-    .notEmpty().withMessage('Hostname is required')
+    .notEmpty()
+    .withMessage("Hostname is required")
     .isLength({ max: VALIDATION_CONFIG.HOSTNAME_MAX_LENGTH })
-    .withMessage(`Hostname must not exceed ${VALIDATION_CONFIG.HOSTNAME_MAX_LENGTH} characters`),
-  body('companyName')
+    .withMessage(
+      `Hostname must not exceed ${VALIDATION_CONFIG.HOSTNAME_MAX_LENGTH} characters`,
+    ),
+  body("companyName")
     .optional()
     .trim()
     .isLength({ max: VALIDATION_CONFIG.USERNAME_MAX_LENGTH })
-    .withMessage(`Company name must not exceed ${VALIDATION_CONFIG.USERNAME_MAX_LENGTH} characters`),
-  handleValidationErrors
+    .withMessage(
+      `Company name must not exceed ${VALIDATION_CONFIG.USERNAME_MAX_LENGTH} characters`,
+    ),
+  handleValidationErrors,
 ];
 
 const validateRegisterVerify = [
-  body('email')
-    .isEmail().withMessage('Invalid email format')
+  body("emailAddress")
+    .isEmail()
+    .withMessage("Invalid email format")
     .normalizeEmail(),
-  body('otp')
+  body("otp")
     .trim()
-    .isLength({ min: VALIDATION_CONFIG.OTP_LENGTH, max: VALIDATION_CONFIG.OTP_LENGTH })
+    .isLength({
+      min: VALIDATION_CONFIG.OTP_LENGTH,
+      max: VALIDATION_CONFIG.OTP_LENGTH,
+    })
     .withMessage(`OTP must be ${VALIDATION_CONFIG.OTP_LENGTH} digits`)
-    .isNumeric().withMessage('OTP must be numeric'),
-  body('hostName')
-    .trim()
-    .notEmpty().withMessage('Hostname is required'),
-  handleValidationErrors
+    .isNumeric()
+    .withMessage("OTP must be numeric"),
+  body("hostName").trim().notEmpty().withMessage("Hostname is required"),
+  handleValidationErrors,
 ];
 
 const validateLogin = [
-  body('email')
-    .isEmail().withMessage('Invalid email format')
+  body("emailAddress")
+    .isEmail()
+    .withMessage("Invalid email format")
     .normalizeEmail(),
-  body('password')
+  body("password")
     .trim()
-    .isLength({ min: VALIDATION_CONFIG.PASSWORD_MIN_LENGTH, max: VALIDATION_CONFIG.PASSWORD_MAX_LENGTH })
-    .withMessage(`Password must be between ${VALIDATION_CONFIG.PASSWORD_MIN_LENGTH} and ${VALIDATION_CONFIG.PASSWORD_MAX_LENGTH} characters`),
-  handleValidationErrors
+    .isLength({
+      min: VALIDATION_CONFIG.PASSWORD_MIN_LENGTH,
+      max: VALIDATION_CONFIG.PASSWORD_MAX_LENGTH,
+    })
+    .withMessage(
+      `Password must be between ${VALIDATION_CONFIG.PASSWORD_MIN_LENGTH} and ${VALIDATION_CONFIG.PASSWORD_MAX_LENGTH} characters`,
+    ),
+  handleValidationErrors,
 ];
 
 const validateLoginOtpRequest = [
-  body('email')
-    .isEmail().withMessage('Invalid email format')
+  body("emailAddress")
+    .isEmail()
+    .withMessage("Invalid email format")
     .normalizeEmail(),
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 const validateLoginOtpVerify = [
-  body('email')
-    .isEmail().withMessage('Invalid email format')
+  body("emailAddress")
+    .isEmail()
+    .withMessage("Invalid email format")
     .normalizeEmail(),
-  body('otp')
+  body("otp")
     .trim()
-    .isLength({ min: VALIDATION_CONFIG.OTP_LENGTH, max: VALIDATION_CONFIG.OTP_LENGTH })
+    .isLength({
+      min: VALIDATION_CONFIG.OTP_LENGTH,
+      max: VALIDATION_CONFIG.OTP_LENGTH,
+    })
     .withMessage(`OTP must be ${VALIDATION_CONFIG.OTP_LENGTH} digits`)
-    .isNumeric().withMessage('OTP must be numeric'),
-  handleValidationErrors
+    .isNumeric()
+    .withMessage("OTP must be numeric"),
+  handleValidationErrors,
 ];
 
 const validateRefreshToken = [
@@ -95,10 +127,11 @@ const validateRefreshToken = [
 ];
 
 const validateResendOtp = [
-  body('email')
-    .isEmail().withMessage('Invalid email format')
+  body("emailAddress")
+    .isEmail()
+    .withMessage("Invalid email format")
     .normalizeEmail(),
-  handleValidationErrors
+  handleValidationErrors,
 ];
 
 module.exports = {

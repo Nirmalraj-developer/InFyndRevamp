@@ -1,4 +1,7 @@
+'use strict';
+
 const { getRedisClient } = require('../config/redis');
+const logger = require('../utils/logger');
 
 const PERMISSION_CACHE_TTL = 900; // 15 minutes
 
@@ -14,7 +17,7 @@ class RedisService {
       const cached = await redis.get(key);
       return cached ? JSON.parse(cached) : null;
     } catch (error) {
-      console.error('[RedisService] Get permission cache error:', error);
+      logger.error('Get permission cache error', { workspaceId, userId, error: error.message });
       return null;
     }
   }
@@ -26,7 +29,7 @@ class RedisService {
       const data = { permissions, restrictions };
       await redis.set(key, JSON.stringify(data), { EX: PERMISSION_CACHE_TTL });
     } catch (error) {
-      console.error('[RedisService] Set permission cache error:', error);
+      logger.error('Set permission cache error', { workspaceId, userId, error: error.message });
     }
   }
 
@@ -36,7 +39,7 @@ class RedisService {
       const key = this.getPermissionKey(workspaceId, userId);
       await redis.del(key);
     } catch (error) {
-      console.error('[RedisService] Invalidate user permission error:', error);
+      logger.error('Invalidate user permission error', { workspaceId, userId, error: error.message });
     }
   }
 
@@ -49,7 +52,7 @@ class RedisService {
         await redis.del(keys);
       }
     } catch (error) {
-      console.error('[RedisService] Invalidate workspace permissions error:', error);
+      logger.error('Invalidate workspace permissions error', { workspaceId, error: error.message });
     }
   }
 }

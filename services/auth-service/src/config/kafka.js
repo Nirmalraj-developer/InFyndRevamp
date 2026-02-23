@@ -1,6 +1,9 @@
+'use strict';
+
 const { Kafka, CompressionTypes, CompressionCodecs } = require('kafkajs');
 const SnappyCodec = require('kafkajs-snappy');
 const config = require('./index');
+const logger = require('../utils/logger');
 const { TOPICS } = require('../kafka/topics');
 
 // Register Snappy compression codec
@@ -16,15 +19,15 @@ const connectKafkaProducer = async () => {
     clientId: config.kafka.clientId,
     brokers: config.kafka.brokers
   });
-  
+
   producer = kafka.producer({
     idempotent: true,
     maxInFlightRequests: 5
   });
-  
+
   await producer.connect();
-  
-  console.log('[AUTH] Kafka producer connected');
+
+  logger.info('Kafka producer connected');
 };
 
 function setConsumerHandlers(handlers) {
@@ -49,7 +52,7 @@ async function initKafkaConsumer() {
   });
 
   await consumer.connect();
-  console.log('[AUTH] Kafka consumer connected');
+  logger.info('Kafka consumer connected');
 }
 
 async function startKafkaConsumers() {
@@ -78,16 +81,17 @@ async function startKafkaConsumers() {
           await consumerHandlers.userRegistration.handleLoginOtpRequested(event);
         }
       } catch (error) {
-        console.error('[AUTH] Registration listener message processing failed', {
+        logger.error('Consumer message processing failed', {
           topic,
           eventType: event.eventType,
+          eventId: event.eventId,
           error: error.message
         });
       }
     }
   });
 
-  console.log('[AUTH] Kafka registration consumers started');
+  logger.info('Kafka registration consumers started');
 }
 
 function getProducer() {
@@ -100,11 +104,11 @@ function getProducer() {
 async function disconnectKafka() {
   if (consumer) {
     await consumer.disconnect();
-    console.log('[AUTH] Kafka consumer disconnected');
+    logger.info('Kafka consumer disconnected');
   }
   if (producer) {
     await producer.disconnect();
-    console.log('[AUTH] Kafka disconnected');
+    logger.info('Kafka producer disconnected');
   }
 }
 

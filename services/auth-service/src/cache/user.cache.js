@@ -4,47 +4,36 @@ const { CACHE_KEYS, TOKEN_CONFIG } = require('../constants/auth.constants');
 const USER_CACHE_TTL = 900;
 
 class UserCache {
-  async get(params) {
-    const { tenantId, hostname, email } = params;
+  async get({ hostName, emailAddress }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.USER_CACHE(tenantId, email);
-    const cached = await redis.get(key);
-    return cached ? JSON.parse(cached) : null;
+    const value = await redis.get(CACHE_KEYS.USER_CACHE(hostName, emailAddress));
+    return value ? JSON.parse(value) : null;
   }
 
-  async set(params) {
-    const { tenantId, hostname, email, user } = params;
+  async set({ hostName, emailAddress, user }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.USER_CACHE(tenantId, email);
-    const cacheData = {
+    const cacheData = JSON.stringify({
       cognitoUserId: user.cognitoUserId,
       role: user.role,
-      tenantId: user.tenantId,
-      userId: user._id?.toString(),
-      hostname: hostname
-    };
-    await redis.setEx(key, USER_CACHE_TTL, JSON.stringify(cacheData));
+      hostName: user.hostName,
+      userId: user.userId
+    });
+    await redis.setEx(CACHE_KEYS.USER_CACHE(hostName, emailAddress), USER_CACHE_TTL, cacheData);
   }
 
-  async setRefreshToken(params) {
-    const { userId, refreshToken } = params;
+  async setRefreshToken({ userId, refreshToken }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.REFRESH_TOKEN(userId);
-    await redis.setEx(key, TOKEN_CONFIG.REFRESH_EXPIRY_SECONDS, refreshToken);
+    await redis.setEx(CACHE_KEYS.REFRESH_TOKEN(userId), TOKEN_CONFIG.REFRESH_EXPIRY_SECONDS, refreshToken);
   }
 
-  async getRefreshToken(params) {
-    const { userId } = params;
+  async getRefreshToken({ userId }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.REFRESH_TOKEN(userId);
-    return await redis.get(key);
+    return await redis.get(CACHE_KEYS.REFRESH_TOKEN(userId));
   }
 
-  async invalidate(params) {
-    const { tenantId, hostname, email } = params;
+  async invalidate({ hostName, emailAddress }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.USER_CACHE(tenantId, email);
-    await redis.del(key);
+    await redis.del(CACHE_KEYS.USER_CACHE(hostName, emailAddress));
   }
 }
 

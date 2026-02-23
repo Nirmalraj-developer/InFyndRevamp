@@ -1,5 +1,6 @@
 const { createClient } = require('redis');
 const config = require('./index');
+const logger = require('../utils/logger');
 
 let redisClient;
 
@@ -15,15 +16,15 @@ async function initRedis() {
       }
     }
   });
-  
+
   redisClient.on('error', (err) => {
-    console.error('[AUTH] Redis error:', err);
+    logger.error('Redis error', { error: err.message });
   });
-  
+
   redisClient.on('connect', () => {
-    console.log('[AUTH] Redis connected');
+    logger.info('Redis connected');
   });
-  
+
   await redisClient.connect();
 }
 
@@ -35,7 +36,7 @@ function getRedisClient() {
 async function disconnectRedis() {
   if (redisClient) {
     await redisClient.quit();
-    console.log('[AUTH] Redis disconnected');
+    logger.info('Redis disconnected');
   }
 }
 

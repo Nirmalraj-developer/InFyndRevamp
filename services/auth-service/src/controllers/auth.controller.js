@@ -17,18 +17,18 @@ class AuthController {
 
   async registerInitiate(req, res, next) {
     try {
-      const { email, userName, companyName, hostName } = req.body;
+      const { emailAddress, userName, companyName } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email || !userName || !hostName) {
+      if (!emailAddress || !userName || !hostName) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.registerInitiate({
-        email,
+        emailAddress,
         userName,
         companyName,
         hostName,
-        tenant: req.tenant,
         correlationId: req.correlationId
       });
 
@@ -45,17 +45,17 @@ class AuthController {
 
   async registerVerify(req, res, next) {
     try {
-      const { email, otp, hostName } = req.body;
+      const { emailAddress, otp } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email || !otp || !hostName) {
+      if (!emailAddress || !otp || !hostName) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.registerVerify({
-        email,
+        emailAddress,
         otp,
         hostName,
-        tenant: req.tenant,
         correlationId: req.correlationId
       });
 
@@ -72,15 +72,16 @@ class AuthController {
 
   async resendRegistrationOtp(req, res, next) {
     try {
-      const { email } = req.body;
+      const { emailAddress } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email) {
+      if (!emailAddress) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.resendRegistrationOtp({
-        email,
-        tenant: req.tenant,
+        emailAddress,
+        hostName,
         correlationId: req.correlationId
       });
 
@@ -97,16 +98,16 @@ class AuthController {
 
   async login(req, res, next) {
     try {
-      const { email } = req.body;
+      const { emailAddress } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email) {
+      if (!emailAddress) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.login({
-        email,
-        tenant: req.tenant,
-        hostname: req.hostname,
+        emailAddress,
+        hostName,
         correlationId: req.correlationId
       });
 
@@ -123,15 +124,16 @@ class AuthController {
 
   async requestLoginOtp(req, res, next) {
     try {
-      const { email } = req.body;
+      const { emailAddress } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email) {
+      if (!emailAddress) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.requestLoginOtp({
-        email,
-        tenant: req.tenant,
+        emailAddress,
+        hostName,
         correlationId: req.correlationId
       });
 
@@ -148,17 +150,17 @@ class AuthController {
 
   async verifyLoginOtp(req, res, next) {
     try {
-      const { email, otp } = req.body;
+      const { emailAddress, otp } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email || !otp) {
+      if (!emailAddress || !otp) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.verifyLoginOtp({
-        email,
+        emailAddress,
         otp,
-        tenant: req.tenant,
-        hostname: req.hostname,
+        hostName,
         correlationId: req.correlationId
       });
 
@@ -199,15 +201,16 @@ class AuthController {
 
   async resendLoginOtp(req, res, next) {
     try {
-      const { email } = req.body;
+      const { emailAddress } = req.body;
+      const hostName = req.hostname || req.get('host');
 
-      if (!email) {
+      if (!emailAddress) {
         throw new AppError(ERROR_MESSAGES.VALIDATION_ERROR, ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
       }
 
       const result = await this.authService.resendLoginOtp({
-        email,
-        tenant: req.tenant,
+        emailAddress,
+        hostName,
         correlationId: req.correlationId
       });
 

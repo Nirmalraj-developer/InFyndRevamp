@@ -1,5 +1,6 @@
 const { MongoClient } = require('mongodb');
 const config = require('./index');
+const logger = require('../utils/logger');
 
 let client;
 let db;
@@ -15,7 +16,7 @@ async function connect() {
 
   await createIndexes(db);
 
-  console.log('[AUTH] MongoDB connected: infynd');
+  logger.info('MongoDB connected: infynd');
   return db;
 }
 
@@ -24,7 +25,7 @@ async function createIndexes(database) {
     { email: 1, tenantId: 1 },
     { unique: true, name: 'email_tenantId_unique' }
   );
-  console.log('[AUTH] Database indexes created');
+  logger.info('Database indexes created');
 }
 
 function getDb() {
@@ -35,7 +36,7 @@ function getDb() {
 async function disconnect() {
   if (client) {
     await client.close();
-    console.log('[AUTH] MongoDB disconnected');
+    logger.info('MongoDB disconnected');
   }
 }
 

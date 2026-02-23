@@ -1,21 +1,24 @@
+'use strict';
+
 const AppError = require('../utils/app-error');
+const logger = require('../utils/logger');
 const { sendError } = require('../utils/response.util');
 
 function errorMiddleware(err, req, res, next) {
   const correlationId = req.correlationId;
   const tenantId = req.tenant?.tenantId;
   const hostname = req.hostname;
-  
+
   // Log error with context
-  console.error('[ERROR]', {
+  logger.error('Request error', {
     correlationId,
     tenantId,
     hostname,
     error: err.message,
     code: err.code,
-    stack: err.stack
+    ...(process.env.NODE_ENV !== 'production' ? { stack: err.stack } : {})
   });
-  
+
   // Handle AppError
   if (err instanceof AppError) {
     return sendError(res, {
@@ -25,7 +28,7 @@ function errorMiddleware(err, req, res, next) {
       correlationId
     });
   }
-  
+
   // Handle Cognito errors
   if (err.name === 'NotAuthorizedException' || err.name === 'UserNotFoundException') {
     return sendError(res, {
@@ -35,7 +38,7 @@ function errorMiddleware(err, req, res, next) {
       correlationId
     });
   }
-  
+
   if (err.name === 'UsernameExistsException') {
     return sendError(res, {
       code: 'AUTH_002',
@@ -44,7 +47,7 @@ function errorMiddleware(err, req, res, next) {
       correlationId
     });
   }
-  
+
   // Handle MongoDB errors
   if (err.name === 'MongoError' && err.code === 11000) {
     return sendError(res, {
@@ -54,7 +57,7 @@ function errorMiddleware(err, req, res, next) {
       correlationId
     });
   }
-  
+
   // Handle validation errors
   if (err.name === 'ValidationError') {
     return sendError(res, {
@@ -64,7 +67,7 @@ function errorMiddleware(err, req, res, next) {
       correlationId
     });
   }
-  
+
   // Handle unknown errors
   return sendError(res, {
     code: 'INTERNAL_ERROR',

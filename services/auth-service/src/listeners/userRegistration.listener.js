@@ -1,4 +1,6 @@
-const AppError = require('../utils/app-error');
+'use strict';
+
+const logger = require('../utils/logger');
 const { renderRegistrationOtpTemplate } = require('../emailTemplates/otp.template');
 const { renderWelcomeTemplate } = require('../emailTemplates/welcome.template');
 
@@ -47,7 +49,7 @@ class UserRegistrationListener {
       hostName
     });
 
-    console.log('[AUTH][LISTENER] USER_REGISTRATION_OTP_SEND handled', { email, hostName });
+    logger.info('LISTENER: USER_REGISTRATION_OTP_SEND handled', { email, hostName });
   }
 
   async handleRegistrationWelcomeEmail(event) {
@@ -87,7 +89,7 @@ class UserRegistrationListener {
       hostName
     });
 
-    console.log('[AUTH][LISTENER] USER_REGISTRATION_WELCOME_EMAIL handled', { email, hostName });
+    logger.info('LISTENER: USER_REGISTRATION_WELCOME_EMAIL handled', { email, hostName });
   }
 
   async handleLoginOtpRequested(event) {
@@ -113,7 +115,7 @@ class UserRegistrationListener {
       hostName: 'datavester.com'
     });
 
-    console.log('[AUTH][LISTENER] USER_LOGIN_OTP_REQUESTED handled', { email });
+    logger.info('LISTENER: USER_LOGIN_OTP_REQUESTED handled', { email });
   }
 }
 

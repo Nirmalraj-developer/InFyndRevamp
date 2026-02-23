@@ -7,62 +7,50 @@ class OtpCache {
     return crypto.randomInt(OTP_CONFIG.MIN, OTP_CONFIG.MAX).toString();
   }
 
-  async setRegistrationOtp(params) {
-    const { userId, hostName, email, otp, expiresInSec } = params;
+  async setRegistrationOtp({ userId, hostName, emailAddress, otp, expiresInSec }) {
     const redis = getRedisClient();
     const key = CACHE_KEYS.REGISTER_OTP(userId, hostName);
-    const payload = {
+    const payload = JSON.stringify({
       otp,
-      email,
-      expiresIn: expiresInSec,
+      emailAddress,
       expiresAt: Date.now() + (expiresInSec * 1000)
-    };
-    await redis.setEx(key, expiresInSec, JSON.stringify(payload));
-    return payload;
+    });
+    await redis.setEx(key, expiresInSec, payload);
   }
 
-  async getRegistrationOtp(params) {
-    const { userId, hostName } = params;
+  async getRegistrationOtp({ userId, hostName }) {
     const redis = getRedisClient();
     const key = CACHE_KEYS.REGISTER_OTP(userId, hostName);
     const value = await redis.get(key);
     return value ? JSON.parse(value) : null;
   }
 
-  async deleteRegistrationOtp(params) {
-    const { userId, hostName } = params;
+  async deleteRegistrationOtp({ userId, hostName }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.REGISTER_OTP(userId, hostName);
-    await redis.del(key);
+    await redis.del(CACHE_KEYS.REGISTER_OTP(userId, hostName));
   }
 
-  async setLoginOtp(params) {
-    const { email, tenantId, otp, expiresInSec } = params;
+  async setLoginOtp({ emailAddress, hostName, otp, expiresInSec }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.LOGIN_OTP(email, tenantId);
-    const payload = {
+    const key = CACHE_KEYS.LOGIN_OTP(emailAddress, hostName);
+    const payload = JSON.stringify({
       otp,
-      email,
-      expiresIn: expiresInSec,
+      emailAddress,
       expiresAt: Date.now() + (expiresInSec * 1000)
-    };
-    await redis.setEx(key, expiresInSec, JSON.stringify(payload));
-    return payload;
+    });
+    await redis.setEx(key, expiresInSec, payload);
   }
 
-  async getLoginOtp(params) {
-    const { email, tenantId } = params;
+  async getLoginOtp({ emailAddress, hostName }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.LOGIN_OTP(email, tenantId);
+    const key = CACHE_KEYS.LOGIN_OTP(emailAddress, hostName);
     const value = await redis.get(key);
     return value ? JSON.parse(value) : null;
   }
 
-  async deleteLoginOtp(params) {
-    const { email, tenantId } = params;
+  async deleteLoginOtp({ emailAddress, hostName }) {
     const redis = getRedisClient();
-    const key = CACHE_KEYS.LOGIN_OTP(email, tenantId);
-    await redis.del(key);
+    await redis.del(CACHE_KEYS.LOGIN_OTP(emailAddress, hostName));
   }
 }
 

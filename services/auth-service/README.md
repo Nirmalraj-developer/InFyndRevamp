@@ -1,208 +1,165 @@
 # Auth Service
 
-White-label authentication service with JWT and Kafka event publishing.
+Lightweight authentication microservice with OTP-based signup/login flows.
 
 ## Features
 
-- ✅ Multi-tenant (white-label) support via `X-Tenant-Id` header
-- ✅ User registration with password hashing (bcrypt)
-- ✅ JWT-based authentication (15min expiry)
-- ✅ Kafka event publishing on registration
-- ✅ Clean service layering (Route → Controller → Service → Repository)
-- ✅ MongoDB with tenant-aware unique indexes
+- **User Registration**: Email-based signup with OTP verification
+- **Login**: OTP-based passwordless authentication
+- **Token Management**: JWT access/refresh tokens
+- **Multi-tenant**: Tenant isolation via Cognito user pools
+- **Caching**: Redis-based OTP and user session caching
 
 ## Architecture
 
 ```
-Route → Controller → Service → Repository → MongoDB
-                        ↓
-                   Kafka Producer
+┌─────────────┐
+│   Client    │
+└──────┬──────┘
+       │
+┌──────▼──────────────────────────────────────┐
+│           Auth Service                       │
+│  ┌────────────┐  ┌──────────────┐          │
+│  │ Controller │──│   Service    │          │
+│  └────────────┘  └──────┬───────┘          │
+│                         │                   │
+│  ┌──────────────────────▼─────────────┐    │
+│  │  Repository  │  Cache  │  Cognito  │    │
+│  └──────┬───────┴────┬────┴─────┬─────┘    │
+└─────────┼────────────┼──────────┼──────────┘
+          │            │          │
+     ┌────▼────┐  ┌───▼────┐ ┌──▼──────┐
+     │ MongoDB │  │ Redis  │ │  AWS    │
+     └─────────┘  └────────┘ │ Cognito │
+                              └─────────┘
 ```
 
 ## API Endpoints
 
-### Register
+### Registration Flow
+- `POST /auth/register/initiate` - Start registration, send OTP
+- `POST /auth/register/verify` - Verify OTP, activate account
+- `POST /auth/resend-registration-otp` - Resend registration OTP
 
-```http
-POST /auth/register
-X-Tenant-Id: infynd
-Content-Type: application/json
+### Login Flow
+- `POST /auth/login` - Request login OTP
+- `POST /auth/login/verify-otp` - Verify OTP, get tokens
+- `POST /auth/login/resend-otp` - Resend login OTP
 
-{
-  "email": "user@example.com",
-  "password": "securePassword123"
-}
+### Token Management
+- `POST /auth/refresh-token` - Refresh access token
+
+## Project Structure
+
+```
+src/
+├── cache/              # Redis caching layer
+│   ├── otp.cache.js
+│   └── user.cache.js
+├── config/             # Configuration
+├── constants/          # Constants & enums
+├── container/          # Dependency injection
+├── controllers/        # HTTP request handlers
+├── kafka/              # Event publishing
+├── listeners/          # Event consumers
+├── middleware/         # Express middleware
+├── models/             # MongoDB schemas
+├── repositories/       # Data access layer
+├── routes/             # API routes
+├── services/           # Business logic
+│   ├── auth.service.js
+│   ├── cognito.service.js
+│   └── tenant.service.js
+└── utils/              # Utilities
 ```
 
-**Response (201)**:
-```json
-{
-  "accessToken": "eyJhbGc...",
-  "user": {
-    "id": "507f1f77bcf86cd799439011",
-    "email": "user@example.com",
-    "tenantId": "infynd",
-    "role": "user",
-    "createdAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
+## Memory Optimization
 
-### Login
-
-```http
-POST /auth/login
-X-Tenant-Id: infynd
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "securePassword123"
-}
-```
-
-**Response (200)**:
-```json
-{
-  "accessToken": "eyJhbGc...",
-  "user": {
-    "id": "507f1f77bcf86cd799439011",
-    "email": "user@example.com",
-    "tenantId": "infynd",
-    "role": "user",
-    "createdAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
-
-### Health Check
-
-```http
-GET /health
-```
-
-**Response (200)**:
-```json
-{
-  "status": "OK"
-}
-```
-
-## JWT Payload
-
-```json
-{
-  "sub": "507f1f77bcf86cd799439011",
-  "tenantId": "infynd",
-  "role": "user",
-  "iat": 1705315200,
-  "exp": 1705316100
-}
-```
-
-## Kafka Events
-
-### user.registered
-
-Published after successful registration.
-
-**Topic**: `user.registered`  
-**Partition Key**: `userId`
-
-```json
-{
-  "eventId": "uuid",
-  "eventType": "user.registered",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "userId": "507f1f77bcf86cd799439011",
-  "payload": {
-    "userId": "507f1f77bcf86cd799439011",
-    "tenantId": "infynd",
-    "email": "user@example.com",
-    "role": "user"
-  },
-  "metadata": {
-    "source": "auth-service",
-    "version": "1.0"
-  }
-}
-```
-
-## Database Schema
-
-### users Collection
-
-```javascript
-{
-  _id: ObjectId,
-  email: String,
-  passwordHash: String,
-  tenantId: String,
-  role: String,
-  createdAt: Date
-}
-```
-
-**Indexes**:
-- `{ email: 1, tenantId: 1 }` - UNIQUE
+- **Lean Models**: Removed unused fields (creditState, workspace refs)
+- **Efficient Caching**: Minimal data stored in Redis
+- **Destructured Parameters**: Reduced object creation overhead
+- **No Workspace Logic**: Removed all workspace/billing/credit code
+- **Projection Queries**: Fetch only required fields from DB
 
 ## Environment Variables
 
-```bash
-PORT=3001
-NODE_ENV=development
-MONGODB_URI=mongodb://localhost:27017
-KAFKA_BROKERS=localhost:9092
-JWT_SECRET=your-secret-key
+```env
+# MongoDB
+MONGODB_URI=mongodb://mongo-primary:27017,mongo-secondary:27017,mongo-arbiter:27017/infynd?replicaSet=rs0
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# AWS Cognito
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=<key>
+AWS_SECRET_ACCESS_KEY=<secret>
+
+# JWT
+JWT_SECRET=<secret>
+JWT_ACCESS_EXPIRY=15m
+JWT_REFRESH_EXPIRY=7d
+
+# Kafka
+KAFKA_BROKERS=kafka1:9092,kafka2:9093,kafka3:9094
 ```
 
-## Running Locally
+## Running
 
 ```bash
-# Install dependencies
-npm install
-
-# Start service
-npm start
-
-# Development mode
+# Development
 npm run dev
+
+# Production
+npm start
 ```
 
-## Docker
+## Key Classes
 
-```bash
-# Build
-docker build -t auth-service .
+### AuthService
+Core business logic for authentication flows. Memory-optimized with minimal dependencies.
 
-# Run
-docker run -p 3001:3001 \
-  -e MONGODB_URI=mongodb://host.docker.internal:27017 \
-  -e KAFKA_BROKERS=host.docker.internal:9092 \
-  -e JWT_SECRET=your-secret \
-  auth-service
+### OtpCache
+Redis-based OTP storage with automatic expiration. Stores only essential data (otp, email, expiresAt).
+
+### UserRepository
+MongoDB data access with projection support to minimize memory footprint.
+
+### CognitoService
+AWS Cognito integration for user pool management.
+
+## Flow Diagrams
+
+### Registration
+```
+Client → POST /register/initiate
+  → Create user (pending)
+  → Create Cognito user
+  → Generate & cache OTP
+  → Publish Kafka event (email)
+  → Return userId
+
+Client → POST /register/verify
+  → Validate OTP
+  → Confirm Cognito user
+  → Update user (active)
+  → Delete OTP
+  → Return user data
 ```
 
-## White-Label Support
+### Login
+```
+Client → POST /login
+  → Find user
+  → Generate & cache OTP
+  → Publish Kafka event (email)
+  → Return success
 
-All requests require `X-Tenant-Id` header. Users are isolated by tenant:
-
-- User `user@example.com` in tenant `infynd` is different from `user@example.com` in tenant `acme`
-- JWT includes `tenantId` for downstream services
-- Database queries always filter by `tenantId`
-
-## Security
-
-- ✅ Passwords hashed with bcrypt (10 rounds)
-- ✅ JWT expires in 15 minutes
-- ✅ Unique constraint on email per tenant
-- ✅ No shared database across services
-- ✅ Kafka events published AFTER DB insert
-
-## Future Enhancements
-
-- User Service consumes `user.registered` for profile creation
-- Refresh token support
-- Password reset flow
-- Email verification
-- Rate limiting
+Client → POST /login/verify-otp
+  → Validate OTP
+  → Generate JWT tokens
+  → Cache refresh token
+  → Delete OTP
+  → Return tokens + user
+```

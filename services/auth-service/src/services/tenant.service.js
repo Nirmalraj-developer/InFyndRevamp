@@ -1,10 +1,15 @@
-const { getDb } = require('../config/database');
+'use strict';
+
+const logger = require('../utils/logger');
 
 class TenantService {
+  constructor(dependencies) {
+    this.tenantRepository = dependencies.tenantRepository;
+  }
+
   async getTenantById(tenantId) {
-    const db = getDb();
-    return await db.collection('tenants').findOne({ tenantId });
+    return this.tenantRepository.findByTenantId(tenantId);
   }
 }
 
-module.exports = new TenantService();
+module.exports = TenantService;

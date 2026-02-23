@@ -1,7 +1,9 @@
+'use strict';
+
 const AppError = require('../utils/app-error');
-const { ERROR_CODES, ERROR_MESSAGES, HTTP_STATUS, USER_STATUS, SUCCESS_MESSAGES, TIMEOUT_CONFIG } = require('../constants/auth.constants');
+const logger = require('../utils/logger');
+const { ERROR_CODES, ERROR_MESSAGES, HTTP_STATUS, SUCCESS_MESSAGES, TIMEOUT_CONFIG } = require('../constants/auth.constants');
 const { executeWithTimeoutAndRetry } = require('../utils/timeoutRetry.util');
-const workspaceAccessRepository = require('../repositories/workspaceAccess.repository');
 
 class AuthService {
   constructor(dependencies) {
@@ -15,57 +17,56 @@ class AuthService {
   }
 
   async registerInitiate(params) {
-    const { email, userName, companyName, hostName, tenant } = params;
+    const { emailAddress, userName, companyName, hostName, correlationId } = params;
 
-    const domain = (email.split('@')[1] || '').toLowerCase();
+    const domain = (emailAddress.split('@')[1] || '').toLowerCase();
     if (this.config.registration.suppressedDomains.includes(domain)) {
       throw new AppError(ERROR_MESSAGES.DOMAIN_SUPPRESSED, ERROR_CODES.DOMAIN_SUPPRESSED, HTTP_STATUS.BAD_REQUEST);
     }
 
-    // Check if user exists in MongoDB
-    const existingUser = await this.userRepository.findByEmailAndTenant({ email, tenantId: tenant.tenantId });
+    const existingUser = await this.userRepository.findByEmailAndHostName(
+      { emailAddress, hostName },
+      { projection: { _id: 1 } }
+    );
     if (existingUser) {
       throw new AppError(ERROR_MESSAGES.USER_EXISTS, ERROR_CODES.USER_EXISTS, HTTP_STATUS.CONFLICT);
     }
 
-    // Create user in MongoDB with PENDING status
-    const user = await this.userRepository.create({
-      email,
+    const user = await this.userRepository.createRegistrationCandidate({
+      emailAddress,
       userName,
       companyName,
-      hostName,
-      tenantId: tenant.tenantId,
-      cognitoSubId: null,
-      emailConfirmed: false,
-      status: 'PENDING',
-      lastLoginAt: null
+      hostName
     });
 
-    // Create user in Cognito (UNCONFIRMED, email_verified=false)
-    const cognitoUser = await executeWithTimeoutAndRetry(
-      () => this.cognitoService.adminCreateUser({
-        email,
-        userName,
-        cognitoUserPoolId: tenant.cognitoUserPoolId
-      }),
-      TIMEOUT_CONFIG.COGNITO_TIMEOUT_MS,
-      TIMEOUT_CONFIG.COGNITO_RETRY_COUNT
-    );
+    const userId = user.userId;
 
-    // Update user with cognitoSubId
-    await this.userRepository.updateCognitoSubId({
-      userId: user._id,
-      cognitoSubId: cognitoUser.sub
-    });
+    let cognitoSub;
+    try {
+      const cognitoResult = await executeWithTimeoutAndRetry(
+        () => this.cognitoService.adminCreateUser({
+          emailAddress,
+          userName,
+          hostName
+        }),
+        TIMEOUT_CONFIG.COGNITO_TIMEOUT_MS,
+        TIMEOUT_CONFIG.COGNITO_RETRY_COUNT
+      );
+      cognitoSub = cognitoResult.sub;
+    } catch (cognitoError) {
+      logger.error('Cognito user creation failed', { userId, emailAddress, error: cognitoError.message });
+      throw cognitoError;
+    }
 
-    // Generate OTP (backend-controlled)
+    await this.userRepository.updateCognitoSubId(user._id, cognitoSub);
+
     const otp = this.otpCache.generateOtp();
-    
+
     await executeWithTimeoutAndRetry(
       () => this.otpCache.setRegistrationOtp({
-        userId: user._id.toString(),
+        userId,
         hostName,
-        email,
+        emailAddress,
         otp,
         expiresInSec: this.config.registration.otpExpiryTimeSec
       }),
@@ -73,35 +74,39 @@ class AuthService {
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
-    // Send OTP via SES
-    await this.kafkaPublisher.publishUserRegistrationOtpSend({
-      user,
+    this.kafkaPublisher.publishUserRegistrationOtpSend({
+      userId,
+      emailAddress,
+      userName,
+      companyName,
       otp,
-      tenant,
       hostName,
-      correlationId: params.correlationId
-    });
+      correlationId
+    }).catch(err => logger.error('Failed to publish registration OTP event', { userId, error: err.message }));
+
+    logger.info('Registration initiated', { userId, emailAddress, hostName });
 
     return {
       message: SUCCESS_MESSAGES.OTP_SENT,
-      userId: user._id.toString()
+      userId
     };
   }
 
   async registerVerify(params) {
-    const { email, otp, hostName, tenant } = params;
+    const { emailAddress, otp, hostName, correlationId } = params;
 
-    const user = await this.userRepository.findByEmailAndTenant({ email, tenantId: tenant.tenantId });
+    const user = await this.userRepository.findByEmailAndHostName(
+      { emailAddress, hostName },
+      { projection: { _id: 1, userId: 1, emailAddress: 1, userName: 1, companyName: 1, hostName: 1, status: 1 } }
+    );
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
-    // Validate OTP from backend
+    const userId = user.userId;
+
     const otpData = await executeWithTimeoutAndRetry(
-      () => this.otpCache.getRegistrationOtp({
-        userId: user._id.toString(),
-        hostName
-      }),
+      () => this.otpCache.getRegistrationOtp({ userId, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
@@ -118,72 +123,64 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.INVALID_OTP, ERROR_CODES.INVALID_OTP, HTTP_STATUS.BAD_REQUEST);
     }
 
-    // Confirm user in Cognito using AdminConfirmSignUp
     await executeWithTimeoutAndRetry(
       () => this.cognitoService.adminConfirmSignUp({
-        email,
-        cognitoUserPoolId: tenant.cognitoUserPoolId
+        emailAddress,
+        hostName
       }),
       TIMEOUT_CONFIG.COGNITO_TIMEOUT_MS,
       TIMEOUT_CONFIG.COGNITO_RETRY_COUNT
     );
 
-    // Update MongoDB user status
-    const updatedUser = await this.userRepository.confirmRegistration({
-      userId: user._id,
-      emailConfirmed: true,
-      status: 'ACTIVE'
-    });
+    const updatedUser = await this.userRepository.markRegistrationVerified(user._id);
 
     await executeWithTimeoutAndRetry(
-      () => this.otpCache.deleteRegistrationOtp({
-        userId: user._id.toString(),
-        hostName
-      }),
+      () => this.otpCache.deleteRegistrationOtp({ userId, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
-    // Add user to SYSTEM_WORKSPACE with FREE_USER role (idempotent)
-    await workspaceAccessRepository.assignSystemWorkspaceRole(updatedUser._id);
-
-    await this.kafkaPublisher.publishUserRegistrationWelcomeEmail({
-      user: updatedUser,
+    this.kafkaPublisher.publishUserRegistrationWelcomeEmail({
+      userId,
+      emailAddress: updatedUser.emailAddress,
+      userName: updatedUser.userName,
+      companyName: updatedUser.companyName,
       hostName,
-      tenant,
-      correlationId: params.correlationId
-    });
+      correlationId
+    }).catch(err => logger.error('Failed to publish welcome email event', { userId, error: err.message }));
 
-    const { getSystemWorkspace } = require('../scripts/bootstrap-system-workspace');
-    const systemWorkspace = await getSystemWorkspace();
+    logger.info('Registration verified', { userId, emailAddress });
 
     return {
       message: SUCCESS_MESSAGES.EMAIL_VERIFIED,
-      user: updatedUser.toJSON(),
-      trial: {
-        workspaceId: systemWorkspace._id,
-        role: 'FREE_USER'
+      user: {
+        userId: updatedUser.userId,
+        emailAddress: updatedUser.emailAddress,
+        userName: updatedUser.userName,
+        status: updatedUser.status
       }
     };
   }
 
   async resendRegistrationOtp(params) {
-    const { email, tenant } = params;
+    const { emailAddress, hostName, correlationId } = params;
 
-    const user = await this.userRepository.findByEmailAndTenant({ email, tenantId: tenant.tenantId });
+    const user = await this.userRepository.findByEmailAndHostName(
+      { emailAddress, hostName },
+      { projection: { _id: 1, userId: 1, emailAddress: 1, userName: 1, companyName: 1, hostName: 1, isVerified: 1 } }
+    );
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
+
+    const userId = user.userId;
 
     if (user.isVerified) {
       throw new AppError('User already verified', ERROR_CODES.VALIDATION_ERROR, HTTP_STATUS.BAD_REQUEST);
     }
 
     const existingOtp = await executeWithTimeoutAndRetry(
-      () => this.otpCache.getRegistrationOtp({
-        userId: user._id.toString(),
-        hostName: user.hostName
-      }),
+      () => this.otpCache.getRegistrationOtp({ userId, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
@@ -193,12 +190,12 @@ class AuthService {
     }
 
     const otp = this.otpCache.generateOtp();
-    
+
     await executeWithTimeoutAndRetry(
       () => this.otpCache.setRegistrationOtp({
-        userId: user._id.toString(),
-        hostName: user.hostName,
-        email,
+        userId,
+        hostName,
+        emailAddress,
         otp,
         expiresInSec: this.config.registration.otpExpiryTimeSec
       }),
@@ -206,59 +203,49 @@ class AuthService {
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
-    await this.kafkaPublisher.publishUserRegistrationOtpSend({
-      user,
+    this.kafkaPublisher.publishUserRegistrationOtpSend({
+      userId,
+      emailAddress: user.emailAddress,
+      userName: user.userName,
+      companyName: user.companyName,
       otp,
-      tenant,
-      hostName: user.hostName,
-      correlationId: params.correlationId
-    });
+      hostName,
+      correlationId
+    }).catch(err => logger.error('Failed to publish resend OTP event', { userId, error: err.message }));
 
-    return {
-      message: 'OTP resent successfully'
-    };
+    return { message: 'OTP resent successfully' };
   }
 
   async login(params) {
-    const { email, tenant } = params;
-    const { tenantId } = tenant;
+    const { emailAddress, hostName, correlationId } = params;
 
-    // Check if user exists in MongoDB
-    let user = await this.userRepository.findByEmailAndTenant({ email, tenantId });
+    let user = await this.userRepository.findByEmailAndHostName(
+      { emailAddress, hostName },
+      { projection: { _id: 1, userId: 1, emailAddress: 1, cognitoUserId: 1, status: 1, role: 1, hostName: 1 } }
+    );
 
-    // If not found, try Cognito sync (optional - skip if Cognito unavailable)
     if (!user) {
       try {
         const cognitoUser = await executeWithTimeoutAndRetry(
           () => this.cognitoService.adminGetUser({
-            email,
-            cognitoUserPoolId: tenant.cognitoUserPoolId
+            emailAddress,
+            hostName
           }),
-          3000, // 3 second timeout
-          0 // No retries
+          3000,
+          0
         );
 
-        console.log(
-          "[Cognito Sync] User found in Cognito but not in MongoDB. Syncing user...",
-          cognitoUser,
-        );
+        logger.info('Cognito sync: user found in Cognito but not in MongoDB', { emailAddress });
 
         if (cognitoUser && cognitoUser.enabled) {
-          // Create MongoDB user record
           user = await this.userRepository.create({
-            email,
-            cognitoSubId: cognitoUser.sub,
-            tenantId,
-            emailConfirmed: true,
-            status: 'ACTIVE'
+            emailAddress,
+            cognitoUserId: cognitoUser.sub,
+            hostName
           });
-
-          // Assign SYSTEM_WORKSPACE FREE_USER role (idempotent)
-          await workspaceAccessRepository.assignSystemWorkspaceRole(user._id);
         }
       } catch (error) {
-        console.log('[AUTH] Cognito sync skipped:', error.message);
-        // User not found in MongoDB or Cognito
+        logger.debug('Cognito sync skipped', { emailAddress, error: error.message });
         throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
       }
     }
@@ -267,14 +254,12 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
-    // Generate 6 digit OTP
     const otp = this.otpCache.generateOtp();
-    
-    // Store OTP in Redis
+
     await executeWithTimeoutAndRetry(
       () => this.otpCache.setLoginOtp({
-        email,
-        tenantId,
+        emailAddress,
+        hostName,
         otp,
         expiresInSec: 300
       }),
@@ -282,24 +267,20 @@ class AuthService {
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
-    // Publish Kafka event
-    await this.kafkaPublisher.publishLoginOtpRequested({
-      email,
+    this.kafkaPublisher.publishLoginOtpRequested({
+      emailAddress,
       otp,
-      tenant
-    });
+      hostName
+    }).catch(err => logger.error('Failed to publish login OTP event', { emailAddress, error: err.message }));
 
-    return {
-      message: 'Login OTP sent successfully'
-    };
+    return { message: 'Login OTP sent successfully' };
   }
 
   async verifyLoginOtp(params) {
-    const { email, otp, tenant } = params;
-    const { tenantId } = tenant;
+    const { emailAddress, otp, hostName } = params;
 
     const otpData = await executeWithTimeoutAndRetry(
-      () => this.otpCache.getLoginOtp({ email, tenantId }),
+      () => this.otpCache.getLoginOtp({ emailAddress, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
@@ -316,37 +297,42 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.INVALID_OTP, ERROR_CODES.INVALID_OTP, HTTP_STATUS.BAD_REQUEST);
     }
 
-    const user = await this.userRepository.findByEmailAndTenant({ email, tenantId });
+    const user = await this.userRepository.findByEmailAndHostName({ emailAddress, hostName });
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
     await executeWithTimeoutAndRetry(
-      () => this.otpCache.deleteLoginOtp({ email, tenantId }),
+      () => this.otpCache.deleteLoginOtp({ emailAddress, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
-
-    // Update lastLoginAt
-    await this.userRepository.updateLastLogin({ userId: user._id });
 
     const accessToken = this.jwtUtil.generateAccessToken({ user });
     const refreshToken = this.jwtUtil.generateRefreshToken({ user });
 
     await executeWithTimeoutAndRetry(
       () => this.userCache.setRefreshToken({
-        userId: user._id.toString(),
+        userId: user.userId,
         refreshToken
       }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
+    logger.info('Login verified', { userId: user.userId, emailAddress });
+
     return {
       message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
       accessToken,
       refreshToken,
-      user: user.toJSON()
+      user: {
+        userId: user.userId,
+        emailAddress: user.emailAddress,
+        role: user.role,
+        hostName: user.hostName,
+        status: user.status
+      }
     };
   }
 
@@ -359,9 +345,7 @@ class AuthService {
     }
 
     const cachedToken = await executeWithTimeoutAndRetry(
-      () => this.userCache.getRefreshToken({
-        userId: decoded.userId
-      }),
+      () => this.userCache.getRefreshToken({ userId: decoded.userId }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
@@ -370,7 +354,9 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.INVALID_TOKEN, ERROR_CODES.INVALID_TOKEN, HTTP_STATUS.UNAUTHORIZED);
     }
 
-    const user = await this.userRepository.findById({ userId: decoded.userId });
+    const user = await this.userRepository.findByUserId(decoded.userId, {
+      projection: { _id: 1, userId: 1, emailAddress: 1, role: 1, hostName: 1, status: 1 }
+    });
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
@@ -380,21 +366,29 @@ class AuthService {
     return {
       message: SUCCESS_MESSAGES.TOKEN_REFRESHED,
       accessToken: newAccessToken,
-      user: user.toJSON()
+      user: {
+        userId: user.userId,
+        emailAddress: user.emailAddress,
+        role: user.role,
+        hostName: user.hostName,
+        status: user.status
+      }
     };
   }
 
   async resendLoginOtp(params) {
-    const { email, tenant } = params;
-    const { tenantId } = tenant;
+    const { emailAddress, hostName } = params;
 
-    const user = await this.userRepository.findByEmailAndTenant({ email, tenantId });
+    const user = await this.userRepository.findByEmailAndHostName(
+      { emailAddress, hostName },
+      { projection: { _id: 1, userId: 1 } }
+    );
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
     const existingOtp = await executeWithTimeoutAndRetry(
-      () => this.otpCache.getLoginOtp({ email, tenantId }),
+      () => this.otpCache.getLoginOtp({ emailAddress, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
@@ -404,11 +398,11 @@ class AuthService {
     }
 
     const otp = this.otpCache.generateOtp();
-    
+
     await executeWithTimeoutAndRetry(
       () => this.otpCache.setLoginOtp({
-        email,
-        tenantId,
+        emailAddress,
+        hostName,
         otp,
         expiresInSec: this.config.registration.otpExpiryTimeSec
       }),
@@ -416,11 +410,11 @@ class AuthService {
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
-    await this.kafkaPublisher.publishLoginOtpRequested({
-      email,
+    this.kafkaPublisher.publishLoginOtpRequested({
+      emailAddress,
       otp,
-      tenant
-    });
+      hostName
+    }).catch(err => logger.error('Failed to publish resend login OTP event', { emailAddress, error: err.message }));
 
     return {
       message: 'OTP resent successfully',

@@ -1,5 +1,6 @@
 const { CognitoIdentityProviderClient } = require('@aws-sdk/client-cognito-identity-provider');
 const config = require('./index');
+const logger = require('../utils/logger');
 
 // Single client instance (region-based)
 let cognitoClient;
@@ -30,8 +31,8 @@ function initCognito() {
     // (ECS task role, EC2 IMDS, shared config/credentials, etc).
     ...(explicitCredentials ? { credentials: explicitCredentials } : {})
   });
-  
-  console.log('[AUTH] Cognito client initialized', {
+
+  logger.info('Cognito client initialized', {
     region: config.aws.cognitoRegion,
     credentialSource: explicitCredentials ? 'environment' : 'default-provider-chain'
   });
