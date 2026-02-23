@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const AppError = require('../utils/app-error');
 const logger = require('../utils/logger');
 const { ERROR_CODES, ERROR_MESSAGES, HTTP_STATUS, SUCCESS_MESSAGES, TIMEOUT_CONFIG } = require('../constants/auth.constants');
@@ -12,6 +13,7 @@ class AuthService {
     this.otpCache = dependencies.otpCache;
     this.userCache = dependencies.userCache;
     this.kafkaPublisher = dependencies.kafkaPublisher;
+    this.redisService = dependencies.redisService;
     this.jwtUtil = dependencies.jwtUtil;
     this.config = dependencies.config;
   }
@@ -107,7 +109,7 @@ class AuthService {
 
     const user = await this.userRepository.findByEmailAndHostName(
       { emailAddress, hostName },
-      { projection: { _id: 1, userId: 1, emailAddress: 1, userName: 1, companyName: 1, hostName: 1, status: 1 } }
+      { projection: { _id: 1, userId: 1, emailAddress: 1, userName: 1, companyName: 1, hostName: 1, status: 1, role: 1 } }
     );
     if (!user) {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
@@ -135,11 +137,37 @@ class AuthService {
 
     const updatedUser = await this.userRepository.markRegistrationVerified(user._id);
 
+    // Cognito Confirmation
+    try {
+      await executeWithTimeoutAndRetry(
+        () => this.cognitoService.adminConfirmSignUp({ emailAddress, hostName }),
+        TIMEOUT_CONFIG.COGNITO_TIMEOUT_MS,
+        TIMEOUT_CONFIG.COGNITO_RETRY_COUNT
+      );
+    } catch (err) {
+      logger.warn('Cognito confirm sign up failed or already confirmed', { emailAddress, error: err.message });
+    }
+
     await executeWithTimeoutAndRetry(
       () => this.otpCache.deleteRegistrationOtp({ userId, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
+
+    // Session Generation
+    const sessionKey = crypto.randomUUID();
+    const sessionData = {
+      userId: updatedUser.userId,
+      email: updatedUser.emailAddress,
+      role: updatedUser.role,
+      workspaceId: updatedUser.workspaceId || null,
+      status: updatedUser.status
+    };
+
+    const accessToken = this.jwtUtil.generateAccessToken({ user: updatedUser, sessionKey });
+    const refreshToken = this.jwtUtil.generateRefreshToken({ user: updatedUser, sessionKey });
+
+    await this.redisService.createSession(sessionKey, sessionData, 900); // Access Token TTL (15m)
 
     this.kafkaPublisher.publishUserRegistrationWelcomeEmail({
       userId,
@@ -154,6 +182,8 @@ class AuthService {
 
     return {
       message: SUCCESS_MESSAGES.EMAIL_VERIFIED,
+      accessToken,
+      refreshToken,
       user: {
         userId: updatedUser.userId,
         emailAddress: updatedUser.emailAddress,
@@ -308,7 +338,7 @@ class AuthService {
     }).then(() => {
       console.log('✅ [LOGIN] Kafka event published successfully');
     }).catch(err => {
-      console.error('❌ [LOGIN] Failed to publish Kafka event:', err.message);
+      console.error('❌ [AUTH] Failed to publish Kafka event:', err.message);
       logger.error('Failed to publish login OTP event', { emailAddress, error: err.message });
     });
 
@@ -341,23 +371,29 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
+    if (!user.emailConfirmed) {
+      await this.userRepository.markEmailVerified(user._id);
+    }
+
     await executeWithTimeoutAndRetry(
       () => this.otpCache.deleteLoginOtp({ emailAddress, hostName }),
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
 
-    const accessToken = this.jwtUtil.generateAccessToken({ user });
-    const refreshToken = this.jwtUtil.generateRefreshToken({ user });
+    const sessionKey = crypto.randomUUID();
+    const sessionData = {
+      userId: user.userId,
+      email: user.emailAddress,
+      role: user.role,
+      workspaceId: user.workspaceId || null,
+      status: user.status
+    };
 
-    await executeWithTimeoutAndRetry(
-      () => this.userCache.setRefreshToken({
-        userId: user.userId,
-        refreshToken
-      }),
-      TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
-      TIMEOUT_CONFIG.REDIS_RETRY_COUNT
-    );
+    const accessToken = this.jwtUtil.generateAccessToken({ user, sessionKey });
+    const refreshToken = this.jwtUtil.generateRefreshToken({ user, sessionKey });
+
+    await this.redisService.createSession(sessionKey, sessionData, 900); // 15 mins
 
     logger.info('Login verified', { userId: user.userId, emailAddress });
 
@@ -383,13 +419,13 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.INVALID_TOKEN, ERROR_CODES.INVALID_TOKEN, HTTP_STATUS.UNAUTHORIZED);
     }
 
-    const cachedToken = await executeWithTimeoutAndRetry(
-      () => this.userCache.getRefreshToken({ userId: decoded.userId }),
-      TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
-      TIMEOUT_CONFIG.REDIS_RETRY_COUNT
-    );
+    const oldSessionKey = decoded.sessionKey;
+    if (!oldSessionKey) {
+      throw new AppError(ERROR_MESSAGES.INVALID_TOKEN, ERROR_CODES.INVALID_TOKEN, HTTP_STATUS.UNAUTHORIZED);
+    }
 
-    if (cachedToken !== refreshToken) {
+    const isBlocked = await this.redisService.isSessionBlocked(oldSessionKey);
+    if (isBlocked) {
       throw new AppError(ERROR_MESSAGES.INVALID_TOKEN, ERROR_CODES.INVALID_TOKEN, HTTP_STATUS.UNAUTHORIZED);
     }
 
@@ -400,11 +436,29 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
-    const newAccessToken = this.jwtUtil.generateAccessToken({ user });
+    // Block Old Session
+    await this.redisService.blockSession(oldSessionKey, 3600 * 24 * 7); // Block for refresh token duration
+    await this.redisService.removeUserSession(user.userId, oldSessionKey);
+
+    // Generate New Session
+    const newSessionKey = crypto.randomUUID();
+    const sessionData = {
+      userId: user.userId,
+      email: user.emailAddress,
+      role: user.role,
+      workspaceId: user.workspaceId || null,
+      status: user.status
+    };
+
+    const newAccessToken = this.jwtUtil.generateAccessToken({ user, sessionKey: newSessionKey });
+    const newRefreshToken = this.jwtUtil.generateRefreshToken({ user, sessionKey: newSessionKey });
+
+    await this.redisService.createSession(newSessionKey, sessionData, 900);
 
     return {
       message: SUCCESS_MESSAGES.TOKEN_REFRESHED,
       accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
       user: {
         userId: user.userId,
         emailAddress: user.emailAddress,
@@ -413,6 +467,23 @@ class AuthService {
         status: user.status
       }
     };
+  }
+
+  async logout(sessionKey, userId) {
+    if (sessionKey) {
+      await this.redisService.blockSession(sessionKey, 3600 * 24 * 7);
+      if (userId) {
+        await this.redisService.removeUserSession(userId, sessionKey);
+      }
+    }
+    return { message: 'Logged out successfully' };
+  }
+
+  async logoutAllDevices(userId) {
+    if (userId) {
+      await this.redisService.invalidateAllUserSessions(userId);
+    }
+    return { message: 'Logged out from all devices successfully' };
   }
 
   async resendLoginOtp(params) {

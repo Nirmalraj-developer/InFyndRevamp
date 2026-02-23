@@ -7,6 +7,7 @@ const CognitoService = require('../services/cognito.service');
 const OtpCache = require('../cache/otp.cache');
 const UserCache = require('../cache/user.cache');
 const TenantCache = require('../cache/tenant.cache');
+const RedisService = require('../services/redis.service');
 const UserRegistrationListener = require('../listeners/userRegistration.listener');
 
 const UserRepository = require('../repositories/user.repository');
@@ -44,6 +45,7 @@ class DIContainer {
       otpCache: this.otpCache,
       userCache: this.userCache,
       kafkaPublisher: this.kafkaPublisher,
+      redisService: RedisService,
       jwtUtil,
       config
     });

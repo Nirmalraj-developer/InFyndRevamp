@@ -21,11 +21,24 @@ async function connect() {
 }
 
 async function createIndexes(database) {
-  await database.collection('users').createIndex(
-    { email: 1, tenantId: 1 },
-    { unique: true, name: 'email_tenantId_unique' }
+  const collection = database.collection('users');
+
+  // Create correct index
+  await collection.createIndex(
+    { emailAddress: 1, hostName: 1 },
+    { unique: true, name: 'emailAddress_hostName_unique' }
   );
-  logger.info('Database indexes created');
+
+  // Drop old index if it exists to prevent null collisions
+  try {
+    await collection.dropIndex('email_tenantId_unique');
+    logger.info('Dropped old index: email_tenantId_unique');
+  } catch (err) {
+    // If index doesn't exist, ignore
+    logger.debug('Old index email_tenantId_unique not found or already dropped');
+  }
+
+  logger.info('Database indexes synchronized');
 }
 
 function getDb() {

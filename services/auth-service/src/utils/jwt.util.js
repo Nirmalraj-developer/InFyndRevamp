@@ -3,12 +3,14 @@ const config = require('../config');
 const { TOKEN_CONFIG } = require('../constants/auth.constants');
 
 function generateAccessToken(params) {
-  const { user } = params;
+  const { user, sessionKey } = params;
   const payload = {
-    sub: user._id.toString(),
-    userId: user._id.toString(),
-    tenantId: user.tenantId,
+    sub: user.userId,
+    userId: user.userId,
+    email: user.emailAddress,
     role: user.role,
+    workspaceId: user.workspaceId || null,
+    sessionKey,
     type: 'access',
     iat: Math.floor(Date.now() / 1000)
   };
@@ -18,10 +20,11 @@ function generateAccessToken(params) {
 }
 
 function generateRefreshToken(params) {
-  const { user } = params;
+  const { user, sessionKey } = params;
   const payload = {
-    sub: user._id.toString(),
-    userId: user._id.toString(),
+    sub: user.userId,
+    userId: user.userId,
+    sessionKey,
     type: 'refresh',
     iat: Math.floor(Date.now() / 1000)
   };

@@ -9,6 +9,7 @@ const {
   validateRefreshToken,
   validateResendOtp
 } = require('../middleware/requestValidation.middleware');
+const { authenticateSession } = require('../middleware/authSession.middleware');
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ const getAuthController = () => {
   return authController;
 };
 
-router.post('/register/initiate', 
+router.post('/register/initiate',
   authRateLimiter,
   validateRegisterInitiate,
   (req, res, next) => {
@@ -82,6 +83,20 @@ router.post('/login/resend-otp',
   validateLoginOtpRequest,
   (req, res, next) => {
     getAuthController().resendLoginOtp(req, res, next);
+  }
+);
+
+router.post('/logout',
+  authenticateSession,
+  (req, res, next) => {
+    getAuthController().logout(req, res, next);
+  }
+);
+
+router.post('/logout-all',
+  authenticateSession,
+  (req, res, next) => {
+    getAuthController().logoutAllDevices(req, res, next);
   }
 );
 

@@ -13,6 +13,41 @@ class AuthController {
     this.verifyLoginOtp = this.verifyLoginOtp.bind(this);
     this.refreshToken = this.refreshToken.bind(this);
     this.resendLoginOtp = this.resendLoginOtp.bind(this);
+    this.logout = this.logout.bind(this);
+    this.logoutAllDevices = this.logoutAllDevices.bind(this);
+  }
+
+  async logout(req, res, next) {
+    try {
+      const sessionKey = req.user?.sessionKey;
+      const userId = req.user?.userId;
+
+      const result = await this.authService.logout(sessionKey, userId);
+
+      return sendSuccess(res, {
+        message: result.message,
+        statusCode: HTTP_STATUS.OK,
+        correlationId: req.correlationId
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async logoutAllDevices(req, res, next) {
+    try {
+      const userId = req.user?.userId;
+
+      const result = await this.authService.logoutAllDevices(userId);
+
+      return sendSuccess(res, {
+        message: result.message,
+        statusCode: HTTP_STATUS.OK,
+        correlationId: req.correlationId
+      });
+    } catch (error) {
+      next(error);
+    }
   }
 
   async registerInitiate(req, res, next) {
