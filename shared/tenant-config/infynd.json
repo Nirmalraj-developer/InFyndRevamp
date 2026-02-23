@@ -1,0 +1,18 @@
+{
+  "tenantId": "infynd",
+  "hostname": "app.infynd.com",
+  "cognito": {
+    "userPoolId": "ap-south-1_InFyndPool",
+    "clientId": "abcd1234xyzInFyndClient"
+  },
+  "internalEmails": ["admin@infynd.com", "ops@infynd.com"],
+  "emailFromName": "InFynd Platform",
+  "emailFromAddress": "noreply@infynd.com",
+  "sesConfigurationSet": "infynd-emails",
+  "branding": {
+    "companyName": "InFynd",
+    "logoUrl": "https://app.infynd.com/logo.png",
+    "primaryColor": "#4F46E5",
+    "supportEmail": "support@infynd.com"
+  }
+}

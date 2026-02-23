@@ -1,0 +1,18 @@
+{
+  "tenantId": "acme",
+  "hostname": "acme.platform.com",
+  "cognito": {
+    "userPoolId": "ap-south-1_AcmePool",
+    "clientId": "xyz9876abcAcmeClient"
+  },
+  "internalEmails": ["admin@acme.com"],
+  "emailFromName": "Acme Platform",
+  "emailFromAddress": "noreply@acme.com",
+  "sesConfigurationSet": "acme-emails",
+  "branding": {
+    "companyName": "Acme Corp",
+    "logoUrl": "https://acme.platform.com/logo.png",
+    "primaryColor": "#10B981",
+    "supportEmail": "support@acme.com"
+  }
+}

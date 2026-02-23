@@ -1,0 +1,21 @@
+{
+  "name": "notification-service",
+  "version": "1.0.0",
+  "description": "Notification service with AWS SES email sending",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ses": "^3.478.0",
+    "express": "^4.18.2",
+    "kafkajs": "^2.2.4",
+    "kafkajs-snappy": "^1.1.0",
+    "mongodb": "^6.3.0",
+    "snappy": "^7.3.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "tenantId": "default",
+  "hostname": "localhost",
+  "cognito": {
+    "userPoolId": "eu-west-3_YIkTepdFY",
+    "clientId": "14e56u6k1j9gudvi6rddvkd172"
+  },
+  "internalEmails": ["admin@infynd.com"],
+  "emailFromName": "InFynd Platform",
+  "emailFromAddress": "noreply@infynd.com",
+  "sesConfigurationSet": "default-emails",
+  "branding": {
+    "companyName": "InFynd",
+    "logoUrl": "https://localhost:3000/logo.png",
+    "primaryColor": "#4F46E5",
+    "supportEmail": "support@infynd.com"
+  }
+}
