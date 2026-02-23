@@ -25,7 +25,7 @@ class UserRegistrationListener {
 
     const tenantConfig = await this.tenantService.getTenantConfigByHostName(hostName);
     const resolvedCompany = companyName || hostName;
-    const logoUrl = `https://${hostName}/assets/logo.png`;
+    const logoUrl = tenantConfig?.logoDataUri || `https://${hostName}/assets/logo.png`;
     const fromAddress = tenantConfig?.emailSender || `noreply@${hostName}`;
     const fromName = resolvedCompany;
 
@@ -62,7 +62,7 @@ class UserRegistrationListener {
 
     const tenantConfig = await this.tenantService.getTenantConfigByHostName(hostName);
     const resolvedCompany = companyName || hostName;
-    const logoUrl = `https://${hostName}/assets/logo.png`;
+    const logoUrl = tenantConfig?.logoDataUri || `https://${hostName}/assets/logo.png`;
     const fromAddress = tenantConfig?.emailSender || `noreply@${hostName}`;
     const fromName = resolvedCompany;
     const supportEmail = `support@${hostName}`;
@@ -95,7 +95,7 @@ class UserRegistrationListener {
 
     const tenantConfig = await this.tenantService.getTenantConfigByHostName(hostName);
     const companyName = hostName;
-    const logoUrl = `https://${hostName}/assets/logo.png`;
+    const logoUrl = tenantConfig?.logoDataUri || `https://${hostName}/assets/logo.png`;
     const fromAddress = tenantConfig?.emailSender || `noreply@${hostName}`;
     const fromName = companyName;
 

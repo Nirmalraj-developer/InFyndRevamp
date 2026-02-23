@@ -11,7 +11,9 @@ class TenantCache {
   async setTenantConfig(hostName, config) {
     const redis = getRedisClient();
     const key = `tenant:config:${hostName}`;
-    await redis.setEx(key, 3600, JSON.stringify(config));
+    const configWithoutLogo = { ...config };
+    delete configWithoutLogo.logoDataUri;
+    await redis.setEx(key, 3600, JSON.stringify(configWithoutLogo));
   }
 }
 

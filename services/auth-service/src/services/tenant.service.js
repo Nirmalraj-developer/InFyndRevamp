@@ -1,6 +1,7 @@
 'use strict';
 
 const logger = require('../utils/logger');
+const { getLogoDataUri } = require('../utils/logo.util');
 
 class TenantService {
   constructor(dependencies) {
@@ -14,11 +15,15 @@ class TenantService {
 
   async getTenantConfigByHostName(hostName) {
     const cached = await this.tenantCache.getTenantConfig(hostName);
-    if (cached) return cached;
+    if (cached) {
+      cached.logoDataUri = getLogoDataUri(cached.logoName);
+      return cached;
+    }
 
     const tenant = await this.tenantRepository.findByDomain(hostName);
     if (tenant) {
       await this.tenantCache.setTenantConfig(hostName, tenant);
+      tenant.logoDataUri = getLogoDataUri(tenant.logoName);
     }
     return tenant;
   }
