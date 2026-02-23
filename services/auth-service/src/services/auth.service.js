@@ -60,8 +60,11 @@ class AuthService {
 
     await this.userRepository.updateCognitoSubId(user._id, cognitoSub);
 
+    console.log('🔐 [AUTH] Step 1: Generating OTP for registration');
     const otp = this.otpCache.generateOtp();
+    console.log('✅ [AUTH] OTP generated:', otp);
 
+    console.log('💾 [AUTH] Step 2: Storing OTP in Redis');
     await executeWithTimeoutAndRetry(
       () => this.otpCache.setRegistrationOtp({
         userId,
@@ -73,7 +76,9 @@ class AuthService {
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
+    console.log('✅ [AUTH] OTP stored in Redis');
 
+    console.log('📤 [AUTH] Step 3: Publishing OTP event to Kafka');
     this.kafkaPublisher.publishUserRegistrationOtpSend({
       userId,
       emailAddress,
@@ -82,7 +87,12 @@ class AuthService {
       otp,
       hostName,
       correlationId
-    }).catch(err => logger.error('Failed to publish registration OTP event', { userId, error: err.message }));
+    }).then(() => {
+      console.log('✅ [AUTH] Kafka event published successfully');
+    }).catch(err => {
+      console.error('❌ [AUTH] Failed to publish Kafka event:', err.message);
+      logger.error('Failed to publish registration OTP event', { userId, error: err.message });
+    });
 
     logger.info('Registration initiated', { userId, emailAddress, hostName });
 
@@ -254,8 +264,11 @@ class AuthService {
       throw new AppError(ERROR_MESSAGES.USER_NOT_FOUND, ERROR_CODES.USER_NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
 
+    console.log('🔐 [LOGIN] Generating OTP');
     const otp = this.otpCache.generateOtp();
+    console.log('✅ [LOGIN] OTP generated:', otp);
 
+    console.log('💾 [LOGIN] Storing OTP in Redis');
     await executeWithTimeoutAndRetry(
       () => this.otpCache.setLoginOtp({
         emailAddress,
@@ -266,12 +279,19 @@ class AuthService {
       TIMEOUT_CONFIG.REDIS_TIMEOUT_MS,
       TIMEOUT_CONFIG.REDIS_RETRY_COUNT
     );
+    console.log('✅ [LOGIN] OTP stored in Redis');
 
+    console.log('📤 [LOGIN] Publishing OTP event to Kafka');
     this.kafkaPublisher.publishLoginOtpRequested({
       emailAddress,
       otp,
       hostName
-    }).catch(err => logger.error('Failed to publish login OTP event', { emailAddress, error: err.message }));
+    }).then(() => {
+      console.log('✅ [LOGIN] Kafka event published successfully');
+    }).catch(err => {
+      console.error('❌ [LOGIN] Failed to publish Kafka event:', err.message);
+      logger.error('Failed to publish login OTP event', { emailAddress, error: err.message });
+    });
 
     return { message: 'Login OTP sent successfully' };
   }

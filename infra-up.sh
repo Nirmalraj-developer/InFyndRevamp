@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-COMPOSE_FILE="docker-compose.production.yml"
+COMPOSE_FILE="docker-compose.yml"
 
 echo "=========================================="
 echo "Infrastructure Bootstrap (Run Once)"

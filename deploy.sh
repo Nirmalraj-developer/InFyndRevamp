@@ -39,7 +39,7 @@ docker rm infynd-backend kafka mongodb 2>/dev/null || true
 
 # Stop any running containers from this project
 echo "Stopping existing project containers..."
-docker compose -f docker-compose.production.yml down 2>/dev/null || true
+docker compose -f docker-compose.yml down 2>/dev/null || true
 
 # Remove unused project volumes (optional - commented out for safety)
 # docker volume prune -f --filter "label=com.docker.compose.project=infynd"
@@ -78,18 +78,18 @@ echo ""
 
 # Populate the mongo-keyfile named volume via the docker-compose init service
 echo "Populating mongo-keyfile Docker volume..."
-docker compose -f docker-compose.production.yml run --rm mongo-keyfile-init
+docker compose -f docker-compose.yml run --rm mongo-keyfile-init
 echo -e "${GREEN}✓ mongo-keyfile volume populated${NC}"
 echo ""
 
 echo "Building Docker images..."
-docker compose -f docker-compose.production.yml build
+docker compose -f docker-compose.yml build
 echo -e "${GREEN}✓ Images built${NC}"
 echo ""
 
 # ── Step 1: Start Zookeeper and MongoDB nodes ──────────────────────────────
 echo "Starting Zookeeper + MongoDB replica set nodes..."
-docker compose -f docker-compose.production.yml up -d zookeeper mongo-primary mongo-secondary mongo-arbiter
+docker compose -f docker-compose.yml up -d zookeeper mongo-primary mongo-secondary mongo-arbiter
 echo "Waiting 30 seconds for MongoDB nodes to start..."
 sleep 30
 
@@ -223,7 +223,7 @@ echo -e "${GREEN}✓ Application user and indexes ready${NC}"
 echo ""
 
 echo "Starting Redis..."
-docker compose -f docker-compose.production.yml up -d redis
+docker compose -f docker-compose.yml up -d redis
 echo "Waiting for Redis to be ready (15 seconds)..."
 sleep 15
 echo -e "${GREEN}✓ Redis started${NC}"
@@ -231,7 +231,7 @@ echo ""
 
 # ── Step 5: Start Kafka cluster ─────────────────────────────────────────────
 echo "Starting Kafka cluster..."
-docker compose -f docker-compose.production.yml up -d kafka-1 kafka-2 kafka-3
+docker compose -f docker-compose.yml up -d kafka-1 kafka-2 kafka-3
 echo "Waiting for Kafka to be ready (40 seconds)..."
 sleep 40
 echo -e "${GREEN}✓ Kafka cluster started${NC}"
@@ -245,7 +245,7 @@ echo ""
 
 # Start application services
 echo "Starting application services..."
-docker compose -f docker-compose.production.yml up -d \
+docker compose -f docker-compose.yml up -d \
   auth-service-1 auth-service-2 \
   notification-service-1 notification-service-2 \
   api-gateway-1 api-gateway-2
@@ -263,7 +263,7 @@ echo ""
 
 # Check all containers
 echo "Container Status:"
-docker compose -f docker-compose.production.yml ps
+docker compose -f docker-compose.yml ps
 echo ""
 
 # Test health endpoints
@@ -313,8 +313,8 @@ echo "  - Redis: localhost:6379"
 echo "  - Kafka: localhost:9092, localhost:9093, localhost:9094"
 echo ""
 echo "Useful Commands:"
-echo "  - View logs: docker compose -f docker-compose.production.yml logs -f"
-echo "  - Stop all: docker compose -f docker-compose.production.yml down"
-echo "  - Restart service: docker compose -f docker-compose.production.yml restart <service>"
+echo "  - View logs: docker compose -f docker-compose.yml logs -f"
+echo "  - Stop all: docker compose -f docker-compose.yml down"
+echo "  - Restart service: docker compose -f docker-compose.yml restart <service>"
 echo ""
 echo -e "${GREEN}System is ready for production traffic!${NC}"

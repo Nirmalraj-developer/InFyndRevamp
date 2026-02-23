@@ -10,6 +10,10 @@ class KafkaPublisher {
   }
 
   async publish(topic, key, event, headers = {}) {
+    console.log(`📤 [KAFKA] Publishing to topic: ${topic}`);
+    console.log(`🔑 [KAFKA] Key: ${key}`);
+    console.log(`📝 [KAFKA] Event type: ${event.eventType}`);
+    
     await this.producer.send({
       topic,
       messages: [{
@@ -19,92 +23,90 @@ class KafkaPublisher {
       }],
       acks: -1
     });
+    
+    console.log(`✅ [KAFKA] Message published successfully to ${topic}`);
   }
 
   async publishUserRegistrationOtpSend(params) {
-    const { userId, email, userName, companyName, otp, tenant, hostName, correlationId } = params;
+    const { userId, emailAddress, userName, companyName, otp, hostName, correlationId } = params;
     const event = {
       eventId: crypto.randomUUID(),
       eventType: EVENT_TYPES.USER_REGISTRATION_OTP_SEND,
       timestamp: new Date().toISOString(),
       payload: {
         userId,
-        email,
+        emailAddress,
         userName,
         companyName,
         hostName,
         otp,
-        expiresInSec: 300,
-        correlationId,
-        tenant
+        expiresInSec: 600,
+        correlationId
       },
       metadata: { source: 'auth-service', version: '1.0' }
     };
 
     await this.publish(TOPICS.USER_REGISTRATION_OTP_SEND, userId, event, {
-      tenantId: tenant.tenantId,
       hostname: hostName
     });
-    logger.info('Published USER_REGISTRATION_OTP_SEND', { email, hostName });
+    logger.info('Published USER_REGISTRATION_OTP_SEND', { emailAddress, hostName });
   }
 
   async publishLoginOtpRequested(params) {
-    const { email, otp, tenant } = params;
+    const { emailAddress, otp, hostName } = params;
     const event = {
       eventId: crypto.randomUUID(),
       eventType: EVENT_TYPES.USER_LOGIN_OTP_REQUESTED,
       timestamp: new Date().toISOString(),
       payload: {
-        email,
+        emailAddress,
         otp,
-        tenant
+        hostName,
+        expiresInSec: 300
       },
       metadata: { source: 'auth-service', version: '1.0' }
     };
 
-    await this.publish(TOPICS.USER_LOGIN_OTP_REQUESTED, email, event, {
-      tenantId: tenant.tenantId
+    await this.publish(TOPICS.USER_LOGIN_OTP_REQUESTED, emailAddress, event, {
+      hostname: hostName
     });
-    logger.info('Published USER_LOGIN_OTP_REQUESTED', { email });
+    logger.info('Published USER_LOGIN_OTP_REQUESTED', { emailAddress, hostName });
   }
 
   async publishUserRegistrationWelcomeEmail(params) {
-    const { userId, email, userName, companyName, hostName, tenant, correlationId } = params;
+    const { userId, emailAddress, userName, companyName, hostName, correlationId } = params;
     const event = {
       eventId: crypto.randomUUID(),
       eventType: EVENT_TYPES.USER_REGISTRATION_WELCOME_EMAIL,
       timestamp: new Date().toISOString(),
       payload: {
         userId,
-        email,
+        emailAddress,
         userName,
         companyName,
         hostName,
-        correlationId,
-        tenant
+        correlationId
       },
       metadata: { source: 'auth-service', version: '1.0' }
     };
 
     await this.publish(TOPICS.USER_REGISTRATION_WELCOME_EMAIL, userId, event, {
-      tenantId: tenant.tenantId,
       hostname: hostName
     });
-    logger.info('Published USER_REGISTRATION_WELCOME_EMAIL', { email, hostName });
+    logger.info('Published USER_REGISTRATION_WELCOME_EMAIL', { emailAddress, hostName });
   }
 
   async publishEmailNotification(params) {
-    const { to, subject, html, fromName, fromAddress, configurationSet, tenantId, hostName } = params;
+    const { to, subject, html, fromName, fromAddress, configurationSet, hostName } = params;
     const event = {
       eventId: crypto.randomUUID(),
       eventType: EVENT_TYPES.EMAIL_NOTIFICATION_REQUESTED,
       timestamp: new Date().toISOString(),
-      payload: { to, subject, html, fromName, fromAddress, configurationSet, tenantId, hostName },
+      payload: { to, subject, html, fromName, fromAddress, configurationSet, hostName },
       metadata: { source: 'auth-service', version: '1.0' }
     };
 
-    await this.publish(TOPICS.EMAIL_NOTIFICATION, `${tenantId}:${to}`, event, {
-      tenantId,
+    await this.publish(TOPICS.EMAIL_NOTIFICATION, `${hostName}:${to}`, event, {
       hostname: hostName
     });
     logger.info('Published EMAIL_NOTIFICATION_REQUESTED', { to, subject, hostName });

@@ -6,6 +6,7 @@ const KafkaPublisher = require('../kafka/kafka.publisher');
 const CognitoService = require('../services/cognito.service');
 const OtpCache = require('../cache/otp.cache');
 const UserCache = require('../cache/user.cache');
+const TenantCache = require('../cache/tenant.cache');
 const UserRegistrationListener = require('../listeners/userRegistration.listener');
 
 const UserRepository = require('../repositories/user.repository');
@@ -29,10 +30,12 @@ class DIContainer {
     this.cognitoService = new CognitoService();
     this.otpCache = new OtpCache();
     this.userCache = new UserCache();
+    this.tenantCache = new TenantCache();
     this.kafkaPublisher = new KafkaPublisher(getProducer());
 
     this.tenantService = new TenantService({
-      tenantRepository: this.tenantRepository
+      tenantRepository: this.tenantRepository,
+      tenantCache: this.tenantCache
     });
 
     this.authService = new AuthService({
@@ -47,6 +50,7 @@ class DIContainer {
 
     this.userRegistrationListener = new UserRegistrationListener({
       kafkaPublisher: this.kafkaPublisher,
+      tenantService: this.tenantService,
       config
     });
   }
