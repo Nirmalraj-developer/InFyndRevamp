@@ -1,6 +1,6 @@
 #!/bin/bash
 # mongo-entrypoint.sh
-# Wrapper entrypoint that copies the keyFile from the named volume
+# Wrapper entrypoint that copies the keyFile from host mount
 # into the correct location with proper ownership/permissions,
 # then delegates to the official MongoDB docker-entrypoint.sh.
 # Runs as root so it can chown the file to the mongodb user (UID 999).

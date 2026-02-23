@@ -194,16 +194,6 @@ services:
       retries: 3
       start_period: 30s
 
-  # ==================== MongoDB KeyFile Init ====================
-  mongo-keyfile-init:
-    image: alpine:latest
-    container_name: mongo-keyfile-init
-    restart: "no"
-    volumes:
-      - ./scripts/mongo-keyfile:/src/mongo-keyfile:ro
-      - mongo-keyfile:/dest
-    command: sh -c "cp /src/mongo-keyfile /dest/mongo-keyfile && chown 999:999 /dest/mongo-keyfile && chmod 400 /dest/mongo-keyfile && echo 'keyfile ready'"
-
   # ==================== MongoDB Replica Set ====================
   mongo-primary:
     image: mongo:7.0
@@ -220,7 +210,7 @@ services:
     volumes:
       - mongo-primary-data:/data/db
       - ./scripts/mongo-entrypoint.sh:/scripts/mongo-entrypoint.sh:ro
-      - mongo-keyfile:/etc/secrets:ro
+      - ./infra/secrets/mongo-keyfile:/etc/secrets/mongo-keyfile:ro
     networks:
       - infynd-network
     healthcheck:
@@ -243,7 +233,7 @@ services:
     volumes:
       - mongo-secondary-data:/data/db
       - ./scripts/mongo-entrypoint.sh:/scripts/mongo-entrypoint.sh:ro
-      - mongo-keyfile:/etc/secrets:ro
+      - ./infra/secrets/mongo-keyfile:/etc/secrets/mongo-keyfile:ro
     networks:
       - infynd-network
     healthcheck:
@@ -265,7 +255,7 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
     volumes:
       - ./scripts/mongo-entrypoint.sh:/scripts/mongo-entrypoint.sh:ro
-      - mongo-keyfile:/etc/secrets:ro
+      - ./infra/secrets/mongo-keyfile:/etc/secrets/mongo-keyfile:ro
     networks:
       - infynd-network
     healthcheck:
@@ -432,7 +422,6 @@ services:
 volumes:
   mongo-primary-data:
   mongo-secondary-data:
-  mongo-keyfile:
   redis-data:
   kafka-1-data:
   kafka-2-data:

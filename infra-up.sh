@@ -20,11 +20,6 @@ fi
 
 chmod +x scripts/*.sh
 
-# Ensure MongoDB keyfile volume is populated for replica set internal auth
-if [ -f scripts/mongo-keyfile ]; then
-  docker compose -f "$COMPOSE_FILE" run --rm mongo-keyfile-init
-fi
-
 # Start infrastructure services only
 docker compose -f "$COMPOSE_FILE" up -d \
   mongo-primary \
